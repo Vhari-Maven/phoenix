@@ -105,23 +105,55 @@ fn read_version_txt(directory: &Path) -> Option<VersionInfo> {
 
     let content = std::fs::read_to_string(&version_file).ok()?;
 
-    // Look for commit SHA in the file
-    // Format: "commit sha: abc1234..."
+    // Parse VERSION.txt which contains lines like:
+    // build number: 2025-12-13-1446
+    // commit sha: abc1234567890...
+    // commit date: 2024-01-15 (optional, older format)
+    let mut commit_sha: Option<String> = None;
+    let mut commit_date: Option<String> = None;
+    let mut build_number: Option<String> = None;
+
     for line in content.lines() {
         if let Some(sha) = line.strip_prefix("commit sha:") {
             let sha = sha.trim();
             if sha.len() >= 7 {
-                return Some(VersionInfo {
-                    version: sha[..7].to_string(),
-                    stable: false,
-                    build_number: None,
-                    released_on: None,
-                });
+                commit_sha = Some(sha[..7].to_string());
+            }
+        } else if let Some(date) = line.strip_prefix("commit date:") {
+            commit_date = Some(date.trim().to_string());
+        } else if let Some(bn) = line.strip_prefix("build number:") {
+            build_number = Some(bn.trim().to_string());
+        }
+    }
+
+    // Need at least the SHA to identify the version
+    let sha = commit_sha?;
+
+    // Extract date from build number if commit date not available
+    // Build number format: "2025-12-13-1446" (YYYY-MM-DD-HHMM)
+    if commit_date.is_none() {
+        if let Some(ref bn) = build_number {
+            // Extract just the date part (first 10 characters: YYYY-MM-DD)
+            if bn.len() >= 10 && bn.chars().nth(4) == Some('-') && bn.chars().nth(7) == Some('-') {
+                commit_date = Some(bn[..10].to_string());
             }
         }
     }
 
-    None
+    // Use date as the display version if available (more user-friendly)
+    // Format: "2024-01-15 (abc1234)" or just "abc1234" if no date
+    let version = if let Some(ref date) = commit_date {
+        format!("{} ({})", date, sha)
+    } else {
+        sha.clone()
+    };
+
+    Some(VersionInfo {
+        version,
+        stable: false,
+        build_number: None,
+        released_on: commit_date,
+    })
 }
 
 /// Calculate SHA256 hash of a file
@@ -310,7 +342,7 @@ mod tests {
         let temp_dir = std::env::temp_dir().join("phoenix_test_version_txt");
         std::fs::create_dir_all(&temp_dir).unwrap();
 
-        // Create a VERSION.txt with commit sha
+        // Create a VERSION.txt with commit sha and date
         let version_file = temp_dir.join("VERSION.txt");
         std::fs::write(
             &version_file,
@@ -322,8 +354,62 @@ mod tests {
         assert!(result.is_some());
 
         let info = result.unwrap();
-        assert_eq!(info.version, "abc1234"); // First 7 characters
+        // Version now includes date: "2024-01-15 (abc1234)"
+        assert_eq!(info.version, "2024-01-15 (abc1234)");
         assert!(!info.stable);
+        assert_eq!(info.released_on, Some("2024-01-15".to_string()));
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_read_version_txt_sha_only() {
+        let temp_dir = std::env::temp_dir().join("phoenix_test_version_sha_only");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create a VERSION.txt with only commit sha (no date)
+        let version_file = temp_dir.join("VERSION.txt");
+        std::fs::write(
+            &version_file,
+            "Main branch: master\ncommit sha: def7890123456abc\n",
+        )
+        .unwrap();
+
+        let result = read_version_txt(&temp_dir);
+        assert!(result.is_some());
+
+        let info = result.unwrap();
+        // Without date, version is just the SHA
+        assert_eq!(info.version, "def7890");
+        assert!(!info.stable);
+        assert_eq!(info.released_on, None);
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_read_version_txt_with_build_number() {
+        let temp_dir = std::env::temp_dir().join("phoenix_test_version_build_number");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create a VERSION.txt with build number (actual format from CDDA)
+        let version_file = temp_dir.join("VERSION.txt");
+        std::fs::write(
+            &version_file,
+            "build type: windows-with-graphics-x64\nbuild number: 2025-12-13-1446\ncommit sha: 302bb35a02fa115e34c30f04041ee81972ee7933\ncommit url: https://github.com/CleverRaven/Cataclysm-DDA/commit/302bb35\n",
+        )
+        .unwrap();
+
+        let result = read_version_txt(&temp_dir);
+        assert!(result.is_some());
+
+        let info = result.unwrap();
+        // Should extract date from build number
+        assert_eq!(info.version, "2025-12-13 (302bb35)");
+        assert!(!info.stable);
+        assert_eq!(info.released_on, Some("2025-12-13".to_string()));
 
         // Clean up
         std::fs::remove_dir_all(&temp_dir).ok();

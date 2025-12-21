@@ -105,22 +105,27 @@ src/
 
 ---
 
-### Spiral 3: GitHub Integration
+### Spiral 3: GitHub Integration ✅ COMPLETE
 **Goal:** Fetch and display available game releases
 
 **Tasks:**
-- [ ] Implement async GitHub API calls
-- [ ] Parse releases JSON into structs
-- [ ] Filter by branch (stable/experimental)
-- [ ] Display release list in dropdown
-- [ ] Show changelog for selected release
-- [ ] Handle rate limiting gracefully
+- [x] Implement async GitHub API calls
+- [x] Parse releases JSON into structs
+- [x] Filter by branch (stable/experimental)
+- [x] Display release list in dropdown
+- [x] Show changelog for selected release (with markdown rendering)
+- [x] Auto-fetch releases on startup
+- [x] Auto-select latest release
+- [x] Show update status indicator (compare installed vs selected)
+- [x] Clickable links in changelog
+- [x] Handle rate limiting gracefully (warning when ≤10 requests remaining)
 
-**Files to modify:**
-- `src/github.rs` - complete the client implementation
-- `src/app.rs` - add release state, async handling
+**Files modified:**
+- `src/github.rs` - GitHubClient with stable/experimental fetch methods, RateLimitInfo
+- `src/app.rs` - release state, async polling, markdown changelog, update indicator, rate limit warning
+- `Cargo.toml` - added egui_commonmark, futures
 
-**Rust concepts:** async/await, reqwest, JSON deserialization, tokio runtime
+**Rust concepts:** async/await, reqwest, JSON deserialization, tokio runtime, egui_commonmark
 
 ---
 
@@ -210,5 +215,5 @@ src/
 
 ## Current Status
 
-**Completed:** Spiral 1 - Game Launching ✅, Spiral 2 - Game Detection ✅
-**Next:** Spiral 3 - GitHub Integration (fetch releases, display changelog)
+**Completed:** Spiral 1 - Game Launching ✅, Spiral 2 - Game Detection ✅, Spiral 3 - GitHub Integration ✅
+**Next:** Spiral 4 - Download & Update (download releases, extract ZIP, progress tracking)
