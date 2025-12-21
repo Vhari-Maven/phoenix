@@ -257,13 +257,30 @@ pub async fn install_update(
     // Phase 4: Cleanup
     // Always delete old_backup_dir (the stale previous_version from last update)
     // Delete in background to not block completion
+    // Uses remove_dir_all crate which is faster than std::fs::remove_dir_all on Windows
     let old_backup_for_cleanup = old_backup_dir.clone();
     tokio::spawn(async move {
         if old_backup_for_cleanup.exists() {
-            if let Err(e) = tokio::fs::remove_dir_all(&old_backup_for_cleanup).await {
-                tracing::warn!("Failed to remove old backup: {}", e);
-            } else {
-                tracing::debug!("Cleaned up old backup directory");
+            let start = Instant::now();
+            let path = old_backup_for_cleanup.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                remove_dir_all::remove_dir_all(&path)
+            })
+            .await;
+
+            match result {
+                Ok(Ok(())) => {
+                    tracing::info!(
+                        "Background cleanup complete in {:.1}s",
+                        start.elapsed().as_secs_f32()
+                    );
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("Failed to remove old backup: {}", e);
+                }
+                Err(e) => {
+                    tracing::warn!("Cleanup task panicked: {}", e);
+                }
             }
         }
     });
