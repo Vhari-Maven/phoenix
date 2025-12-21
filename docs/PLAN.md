@@ -63,23 +63,24 @@ src/
 
 ## Development Spirals
 
-### Spiral 1: Game Launching (Foundation)
+### Spiral 1: Game Launching (Foundation) ✅ COMPLETE
 **Goal:** Browse for game directory, launch the game
 
 **Tasks:**
-- [ ] Add `rfd` crate for native file dialogs
-- [ ] Wire Browse button to directory picker
-- [ ] Store selected directory in app state
-- [ ] Validate directory contains game executable
-- [ ] Wire Launch button to spawn game process
-- [ ] Display basic game info (path, executable found)
+- [x] Add `rfd` crate for native file dialogs
+- [x] Wire Browse button to directory picker
+- [x] Store selected directory in app state
+- [x] Validate directory contains game executable
+- [x] Wire Launch button to spawn game process
+- [x] Display basic game info (path, executable found)
+- [x] Save/load config persistence
 
-**Files to modify:**
-- `Cargo.toml` - add rfd dependency
-- `src/app.rs` - add directory state, button handlers
-- `src/game.rs` - use detect_game and launch_game functions
+**Files modified:**
+- `Cargo.toml` - added rfd dependency
+- `src/app.rs` - directory state, button handlers, config save
+- `src/game.rs` - detect_game and launch_game functions
 
-**Rust concepts:** Option types, Result handling, std::process::Command
+**Rust concepts learned:** Option types, Result handling, std::process::Command, file dialogs
 
 ---
 
@@ -87,16 +88,16 @@ src/
 **Goal:** Detect game version, display detailed info
 
 **Tasks:**
-- [ ] Calculate SHA256 of game executable
-- [ ] Display version/build info (or "Unknown" if not in database)
-- [ ] Show save directory size
-- [ ] Persist selected directory to config
-- [ ] Load directory from config on startup
+- [x] Calculate SHA256 of game executable (already implemented in game.rs)
+- [x] Show save directory size (already implemented)
+- [x] Persist selected directory to config (done in Spiral 1)
+- [x] Load directory from config on startup (done in Spiral 1)
+- [ ] Display version/build info from SHA256 hash lookup
+- [ ] Create version hash database or fetch from API
 
 **Files to modify:**
-- `src/game.rs` - flesh out detection logic
-- `src/config.rs` - implement save/load
-- `src/app.rs` - integrate config persistence
+- `src/game.rs` - add version lookup from hash
+- `src/app.rs` - display version info
 
 **Rust concepts:** File I/O, hashing, serde serialization
 
@@ -207,4 +208,5 @@ src/
 
 ## Current Status
 
-**Active:** Spiral 1 - Game Launching
+**Completed:** Spiral 1 - Game Launching ✅
+**Next:** Spiral 2 - Game Detection (version lookup from SHA256)
