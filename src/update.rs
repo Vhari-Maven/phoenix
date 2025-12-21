@@ -108,7 +108,7 @@ pub async fn download_asset(
     dest_path: PathBuf,
     progress_tx: watch::Sender<UpdateProgress>,
 ) -> Result<DownloadResult> {
-    tracing::info!("Starting download from: {}", url);
+    let download_start = Instant::now();
 
     // Send initial progress
     let _ = progress_tx.send(UpdateProgress {
@@ -132,7 +132,6 @@ pub async fn download_asset(
     }
 
     let total_size = response.content_length().unwrap_or(0);
-    tracing::info!("Download size: {} bytes", total_size);
 
     // Create parent directory if needed
     if let Some(parent) = dest_path.parent() {
@@ -195,7 +194,14 @@ pub async fn download_asset(
         .await
         .context("Failed to finalize download")?;
 
-    tracing::info!("Download complete: {} bytes to {:?}", downloaded, dest_path);
+    let elapsed = download_start.elapsed().as_secs_f32();
+    let speed_mbps = (downloaded as f32 / 1_000_000.0) / elapsed;
+    tracing::info!(
+        "Download complete: {:.1} MB in {:.1}s ({:.1} MB/s)",
+        downloaded as f32 / 1_000_000.0,
+        elapsed,
+        speed_mbps
+    );
 
     Ok(DownloadResult {
         file_path: dest_path,
@@ -211,42 +217,44 @@ pub async fn install_update(
     prevent_save_move: bool,
     remove_previous_version: bool,
 ) -> Result<()> {
+    let update_start = Instant::now();
     let previous_version_dir = game_dir.join("previous_version");
 
     // Phase 1: Backup current installation
-    tracing::info!("Backing up current installation to {:?}", previous_version_dir);
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::BackingUp,
         ..Default::default()
     });
 
+    let phase_start = Instant::now();
     backup_current_installation(&game_dir, &previous_version_dir).await?;
+    tracing::info!("Backup complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
     // Phase 2: Extract new version
-    tracing::info!("Extracting update from {:?}", zip_path);
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::Extracting,
         ..Default::default()
     });
 
+    let phase_start = Instant::now();
     let total_files = extract_zip(&zip_path, &game_dir, progress_tx.clone()).await?;
-    tracing::info!("Extracted {} files", total_files);
+    tracing::info!("Extracted {} files in {:.1}s", total_files, phase_start.elapsed().as_secs_f32());
 
-    // Log directory structure after extraction for debugging
-    log_directory_structure(&game_dir).await;
+    // Verify extraction succeeded
+    verify_extraction(&game_dir).await;
 
     // Phase 3: Smart restore user data
-    tracing::info!("Restoring user data with smart migration");
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::Restoring,
         ..Default::default()
     });
 
+    let phase_start = Instant::now();
     restore_user_directories_smart(&previous_version_dir, &game_dir, prevent_save_move).await?;
+    tracing::info!("Restore complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
     // Phase 4: Optional cleanup of previous_version
     if remove_previous_version {
-        tracing::info!("Removing previous_version directory");
         if let Err(e) = tokio::fs::remove_dir_all(&previous_version_dir).await {
             tracing::warn!("Failed to remove previous_version: {}", e);
         }
@@ -260,7 +268,7 @@ pub async fn install_update(
         ..Default::default()
     });
 
-    tracing::info!("Update installation complete");
+    tracing::info!("Update complete in {:.1}s total", update_start.elapsed().as_secs_f32());
     Ok(())
 }
 
@@ -282,6 +290,7 @@ async fn backup_current_installation(game_dir: &Path, backup_dir: &Path) -> Resu
         .await
         .context("Failed to read game directory")?;
 
+    let mut items_moved = 0u32;
     while let Some(entry) = entries.next_entry().await? {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
@@ -294,12 +303,13 @@ async fn backup_current_installation(game_dir: &Path, backup_dir: &Path) -> Resu
         let src = entry.path();
         let dst = backup_dir.join(&name);
 
-        tracing::debug!("Moving {:?} to {:?}", src, dst);
         tokio::fs::rename(&src, &dst)
             .await
             .with_context(|| format!("Failed to move {:?} to backup", src))?;
+        items_moved += 1;
     }
 
+    tracing::debug!("Moved {} items to backup", items_moved);
     Ok(())
 }
 
@@ -320,14 +330,6 @@ async fn extract_zip(
             .context("Failed to read ZIP archive")?;
 
         let total = archive.len();
-        tracing::info!("ZIP contains {} entries", total);
-
-        // Log first few entries to understand ZIP structure
-        for i in 0..std::cmp::min(10, total) {
-            if let Ok(f) = archive.by_index(i) {
-                tracing::debug!("ZIP entry [{}]: {}", i, f.name());
-            }
-        }
 
         // Send initial extraction progress
         let _ = progress_tx.send(UpdateProgress {
@@ -346,11 +348,6 @@ async fn extract_zip(
                 Some(path) => destination.join(path),
                 None => continue, // Skip entries with unsafe paths
             };
-
-            // Log destination for first few files for debugging
-            if i < 5 {
-                tracing::debug!("Extracting: {} -> {:?}", file.name(), outpath);
-            }
 
             // Handle directory or file
             if file.name().ends_with('/') {
@@ -372,8 +369,8 @@ async fn extract_zip(
                     .with_context(|| format!("Failed to extract file {:?}", outpath))?;
             }
 
-            // Update progress periodically (every 50 files)
-            if i % 50 == 0 || i == total - 1 {
+            // Update progress periodically (every 100 files)
+            if i % 100 == 0 || i == total - 1 {
                 let current_file = file.name().to_string();
                 let _ = progress_tx.send(UpdateProgress {
                     phase: UpdatePhase::Extracting,
@@ -403,10 +400,10 @@ async fn restore_user_directories_smart(
     prevent_save_move: bool,
 ) -> Result<()> {
     // Phase 1: Simple directory restoration
+    let mut restored_dirs = Vec::new();
     for dir_name in SIMPLE_RESTORE_DIRS {
         // Skip save if prevent_save_move is enabled
         if *dir_name == "save" && prevent_save_move {
-            tracing::info!("Skipping save directory (prevent_save_move enabled)");
             continue;
         }
 
@@ -414,8 +411,6 @@ async fn restore_user_directories_smart(
         let dst = game_dir.join(dir_name);
 
         if src.exists() {
-            tracing::info!("Restoring directory: {}", dir_name);
-
             // Remove any directory that might have been extracted
             if dst.exists() {
                 tokio::fs::remove_dir_all(&dst)
@@ -425,7 +420,16 @@ async fn restore_user_directories_smart(
 
             // Copy from backup
             copy_dir_recursive(&src, &dst).await?;
+            restored_dirs.push(*dir_name);
         }
+    }
+
+    if !restored_dirs.is_empty() {
+        tracing::debug!("Restored directories: {}", restored_dirs.join(", "));
+    }
+
+    if prevent_save_move {
+        tracing::info!("Skipped save directory (prevent_save_move enabled)");
     }
 
     // Phase 2: Config directory with file filtering
@@ -456,8 +460,6 @@ async fn restore_config_directory(previous_dir: &Path, game_dir: &Path) -> Resul
         return Ok(());
     }
 
-    tracing::info!("Restoring config directory (filtering debug files)");
-
     // Remove any config that was extracted
     if dst.exists() {
         tokio::fs::remove_dir_all(&dst).await?;
@@ -467,6 +469,7 @@ async fn restore_config_directory(previous_dir: &Path, game_dir: &Path) -> Resul
     tokio::fs::create_dir_all(&dst).await?;
 
     let mut entries = tokio::fs::read_dir(&src).await?;
+    let mut skipped_count = 0u32;
 
     while let Some(entry) = entries.next_entry().await? {
         let file_name = entry.file_name();
@@ -474,7 +477,7 @@ async fn restore_config_directory(previous_dir: &Path, game_dir: &Path) -> Resul
 
         // Skip debug files
         if CONFIG_SKIP_FILES.iter().any(|skip| name_str == *skip) {
-            tracing::debug!("Skipping config file: {}", name_str);
+            skipped_count += 1;
             continue;
         }
 
@@ -489,6 +492,10 @@ async fn restore_config_directory(previous_dir: &Path, game_dir: &Path) -> Resul
         }
     }
 
+    if skipped_count > 0 {
+        tracing::debug!("Skipped {} debug files from config", skipped_count);
+    }
+
     Ok(())
 }
 
@@ -498,19 +505,23 @@ async fn execute_migration_plan(
     game_dir: &Path,
     previous_dir: &Path,
 ) -> Result<()> {
+    let mut restored_counts: Vec<String> = Vec::new();
+
     // Restore custom mods to data/mods/
-    let mods_dir = game_dir.join("data").join("mods");
-    for mod_info in &plan.custom_mods {
-        if let Some(dir_name) = mod_info.path.file_name() {
-            let target = mods_dir.join(dir_name);
-            if !target.exists() {
-                tracing::info!(
-                    "Restoring custom mod: {} (id: {})",
-                    dir_name.to_string_lossy(),
-                    mod_info.id
-                );
-                copy_dir_recursive(&mod_info.path, &target).await?;
+    if !plan.custom_mods.is_empty() {
+        let mods_dir = game_dir.join("data").join("mods");
+        let mut count = 0;
+        for mod_info in &plan.custom_mods {
+            if let Some(dir_name) = mod_info.path.file_name() {
+                let target = mods_dir.join(dir_name);
+                if !target.exists() {
+                    copy_dir_recursive(&mod_info.path, &target).await?;
+                    count += 1;
+                }
             }
+        }
+        if count > 0 {
+            restored_counts.push(format!("{} custom mods", count));
         }
     }
 
@@ -519,38 +530,54 @@ async fn execute_migration_plan(
         let user_mods_dir = game_dir.join("mods");
         tokio::fs::create_dir_all(&user_mods_dir).await?;
 
+        let mut count = 0;
         for mod_info in &plan.custom_user_mods {
             if let Some(dir_name) = mod_info.path.file_name() {
                 let target = user_mods_dir.join(dir_name);
                 if !target.exists() {
-                    tracing::info!("Restoring custom user mod: {}", mod_info.id);
                     copy_dir_recursive(&mod_info.path, &target).await?;
+                    count += 1;
                 }
             }
+        }
+        if count > 0 {
+            restored_counts.push(format!("{} user mods", count));
         }
     }
 
     // Restore custom tilesets to gfx/
-    let gfx_dir = game_dir.join("gfx");
-    for tileset_info in &plan.custom_tilesets {
-        if let Some(dir_name) = tileset_info.path.file_name() {
-            let target = gfx_dir.join(dir_name);
-            if !target.exists() {
-                tracing::info!("Restoring custom tileset: {}", tileset_info.name);
-                copy_dir_recursive(&tileset_info.path, &target).await?;
+    if !plan.custom_tilesets.is_empty() {
+        let gfx_dir = game_dir.join("gfx");
+        let mut count = 0;
+        for tileset_info in &plan.custom_tilesets {
+            if let Some(dir_name) = tileset_info.path.file_name() {
+                let target = gfx_dir.join(dir_name);
+                if !target.exists() {
+                    copy_dir_recursive(&tileset_info.path, &target).await?;
+                    count += 1;
+                }
             }
+        }
+        if count > 0 {
+            restored_counts.push(format!("{} tilesets", count));
         }
     }
 
     // Restore custom soundpacks to data/sound/
-    let sound_dir = game_dir.join("data").join("sound");
-    for soundpack_info in &plan.custom_soundpacks {
-        if let Some(dir_name) = soundpack_info.path.file_name() {
-            let target = sound_dir.join(dir_name);
-            if !target.exists() {
-                tracing::info!("Restoring custom soundpack: {}", soundpack_info.name);
-                copy_dir_recursive(&soundpack_info.path, &target).await?;
+    if !plan.custom_soundpacks.is_empty() {
+        let sound_dir = game_dir.join("data").join("sound");
+        let mut count = 0;
+        for soundpack_info in &plan.custom_soundpacks {
+            if let Some(dir_name) = soundpack_info.path.file_name() {
+                let target = sound_dir.join(dir_name);
+                if !target.exists() {
+                    copy_dir_recursive(&soundpack_info.path, &target).await?;
+                    count += 1;
+                }
             }
+        }
+        if count > 0 {
+            restored_counts.push(format!("{} soundpacks", count));
         }
     }
 
@@ -559,16 +586,21 @@ async fn execute_migration_plan(
         let font_dir = game_dir.join("font");
         tokio::fs::create_dir_all(&font_dir).await?;
 
+        let mut count = 0;
         for font_path in &plan.custom_fonts {
             if let Some(file_name) = font_path.file_name() {
                 let target = font_dir.join(file_name);
                 if font_path.is_file() {
-                    tracing::info!("Restoring custom font: {}", file_name.to_string_lossy());
                     tokio::fs::copy(font_path, &target).await?;
+                    count += 1;
                 } else if font_path.is_dir() {
                     copy_dir_recursive(font_path, &target).await?;
+                    count += 1;
                 }
             }
+        }
+        if count > 0 {
+            restored_counts.push(format!("{} fonts", count));
         }
     }
 
@@ -600,9 +632,14 @@ async fn execute_migration_plan(
             .join("mods")
             .join("user-default-mods.json");
         if src.exists() && !dst.exists() {
-            tracing::info!("Restoring user-default-mods.json");
             tokio::fs::copy(&src, &dst).await?;
+            restored_counts.push("user-default-mods.json".to_string());
         }
+    }
+
+    // Log summary of restored custom content
+    if !restored_counts.is_empty() {
+        tracing::info!("Restored custom content: {}", restored_counts.join(", "));
     }
 
     Ok(())
@@ -635,46 +672,17 @@ async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Log the directory structure for debugging
-async fn log_directory_structure(game_dir: &Path) {
-    tracing::info!("Post-extraction directory structure:");
+/// Verify critical files exist after extraction
+async fn verify_extraction(game_dir: &Path) -> bool {
+    // Just check for the executable - the most critical file
+    let exe_exists = game_dir.join("cataclysm-tiles.exe").exists()
+        || game_dir.join("cataclysm.exe").exists();
 
-    // Check for key directories
-    let dirs_to_check = [
-        "data",
-        "data/font",
-        "data/json",
-        "data/mods",
-        "font",
-        "json",
-        "mods",
-        "gfx",
-        "save",
-        "config",
-    ];
-
-    for dir in dirs_to_check {
-        let path = game_dir.join(dir);
-        if path.exists() {
-            tracing::info!("  [EXISTS] {}/", dir);
-        } else {
-            tracing::debug!("  [MISSING] {}/", dir);
-        }
+    if !exe_exists {
+        tracing::warn!("Game executable not found after extraction");
     }
 
-    // Check for executables
-    let exes = ["cataclysm-tiles.exe", "cataclysm.exe"];
-    for exe in exes {
-        let path = game_dir.join(exe);
-        if path.exists() {
-            tracing::info!("  [EXISTS] {}", exe);
-        }
-    }
-
-    // Check VERSION.txt
-    if game_dir.join("VERSION.txt").exists() {
-        tracing::info!("  [EXISTS] VERSION.txt");
-    }
+    exe_exists
 }
 
 /// Get the download cache directory.

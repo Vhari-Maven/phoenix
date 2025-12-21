@@ -129,8 +129,6 @@ impl GitHubClient {
             GITHUB_API_BASE, CDDA_REPO, tag
         );
 
-        tracing::debug!("Fetching release by tag: {}", url);
-
         let response = match self
             .client
             .get(&url)
@@ -139,30 +137,18 @@ impl GitHubClient {
             .await
         {
             Ok(r) => r,
-            Err(e) => {
-                tracing::debug!("Failed to fetch tag {}: {}", tag, e);
-                return (None, RateLimitInfo::default());
-            }
+            Err(_) => return (None, RateLimitInfo::default()),
         };
 
         let rate_limit = RateLimitInfo::from_response(&response);
 
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            tracing::debug!("Tag {} not found (not released yet)", tag);
-            return (None, rate_limit);
-        }
-
         if !response.status().is_success() {
-            tracing::debug!("Failed to fetch tag {}: {}", tag, response.status());
             return (None, rate_limit);
         }
 
         match response.json().await {
             Ok(release) => (Some(release), rate_limit),
-            Err(e) => {
-                tracing::debug!("Failed to parse release {}: {}", tag, e);
-                (None, rate_limit)
-            }
+            Err(_) => (None, rate_limit),
         }
     }
 
@@ -172,8 +158,6 @@ impl GitHubClient {
             "{}/repos/{}/git/refs/tags",
             GITHUB_API_BASE, CDDA_REPO
         );
-
-        tracing::debug!("Fetching git tags from: {}", url);
 
         let response = self
             .client
@@ -246,6 +230,8 @@ impl GitHubClient {
 
     /// Fetch stable releases by discovering tags from GitHub
     pub async fn get_stable_releases(&self) -> Result<FetchResult<Vec<Release>>> {
+        let start = std::time::Instant::now();
+
         // First, get all stable tags
         let (tags, mut last_rate_limit) = self.get_stable_tags().await?;
 
@@ -257,27 +243,25 @@ impl GitHubClient {
             last_rate_limit = rate_limit;
 
             if let Some(r) = release {
-                tracing::info!("Found stable release: {} ({})", r.name, tag);
                 stable.push(r);
             }
         }
 
-        if let Some(remaining) = last_rate_limit.remaining {
-            tracing::debug!("GitHub API rate limit remaining: {}", remaining);
-        }
-
-        tracing::info!("Fetched {} stable releases", stable.len());
+        tracing::info!(
+            "Fetched {} stable releases in {:.1}s",
+            stable.len(),
+            start.elapsed().as_secs_f32()
+        );
         Ok(FetchResult { data: stable, rate_limit: last_rate_limit })
     }
 
     /// Fetch experimental releases (recent builds from releases list)
     pub async fn get_experimental_releases(&self, per_page: u32) -> Result<FetchResult<Vec<Release>>> {
+        let start = std::time::Instant::now();
         let url = format!(
             "{}/repos/{}/releases?per_page={}",
             GITHUB_API_BASE, CDDA_REPO, per_page
         );
-
-        tracing::debug!("Fetching experimental releases from: {}", url);
 
         let response = self
             .client
@@ -288,9 +272,6 @@ impl GitHubClient {
 
         // Extract rate limit info before consuming response
         let rate_limit = RateLimitInfo::from_response(&response);
-        if let Some(remaining) = rate_limit.remaining {
-            tracing::debug!("GitHub API rate limit remaining: {}", remaining);
-        }
 
         if !response.status().is_success() {
             let status = response.status();
@@ -299,7 +280,11 @@ impl GitHubClient {
         }
 
         let releases: Vec<Release> = response.json().await?;
-        tracing::info!("Fetched {} experimental releases", releases.len());
+        tracing::info!(
+            "Fetched {} experimental releases in {:.1}s",
+            releases.len(),
+            start.elapsed().as_secs_f32()
+        );
 
         Ok(FetchResult { data: releases, rate_limit })
     }
@@ -310,8 +295,6 @@ impl GitHubClient {
             "{}/repos/{}/releases/latest",
             GITHUB_API_BASE, CDDA_REPO
         );
-
-        tracing::debug!("Fetching latest release from: {}", url);
 
         let response = self
             .client
@@ -333,8 +316,6 @@ impl GitHubClient {
     /// Find the Windows x64 graphical asset in a release
     /// Prefers the version with sounds if available
     pub fn find_windows_asset(release: &Release) -> Option<&ReleaseAsset> {
-        tracing::debug!("Looking for Windows asset in release: {} ({} assets)", release.name, release.assets.len());
-
         let mut best_match: Option<&ReleaseAsset> = None;
 
         for asset in &release.assets {
@@ -345,11 +326,6 @@ impl GitHubClient {
             let is_x64 = name.contains("x64");
             let is_zip = name.ends_with(".zip");
             let has_sounds = name.contains("sounds");
-
-            tracing::debug!(
-                "  Asset: {} -> windows={}, graphical={}, x64={}, zip={}, sounds={}",
-                asset.name, is_windows, is_graphical, is_x64, is_zip, has_sounds
-            );
 
             if is_windows && is_graphical && is_x64 && is_zip {
                 // Prefer version with sounds
@@ -363,13 +339,15 @@ impl GitHubClient {
             }
         }
 
-        if let Some(asset) = best_match {
-            tracing::info!("Found matching Windows asset: {}", asset.name);
-            Some(asset)
-        } else {
-            tracing::warn!("No matching Windows x64 graphical asset found in release {}", release.name);
-            None
+        if best_match.is_none() {
+            tracing::warn!(
+                "No Windows x64 graphical asset in {} ({} assets)",
+                release.name,
+                release.assets.len()
+            );
         }
+
+        best_match
     }
 }
 

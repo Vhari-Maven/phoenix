@@ -3,6 +3,7 @@ use eframe::egui::{self, Color32, RichText, Rounding, Vec2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use futures::FutureExt;
 use std::path::PathBuf;
+use std::time::Instant;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -82,22 +83,26 @@ enum Tab {
 impl PhoenixApp {
     /// Create a new application instance
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let startup_start = Instant::now();
+
         // Load configuration
+        let phase_start = Instant::now();
         let config = Config::load().unwrap_or_default();
+        tracing::debug!("Config loaded in {:.1}ms", phase_start.elapsed().as_secs_f32() * 1000.0);
 
         // Open database
+        let phase_start = Instant::now();
         let db = match Database::open() {
-            Ok(db) => {
-                tracing::info!("Database opened successfully");
-                Some(db)
-            }
+            Ok(db) => Some(db),
             Err(e) => {
                 tracing::error!("Failed to open database: {}", e);
                 None
             }
         };
+        tracing::debug!("Database opened in {:.1}ms", phase_start.elapsed().as_secs_f32() * 1000.0);
 
         // Try to detect game if directory is configured
+        let phase_start = Instant::now();
         let game_info = config
             .game
             .directory
@@ -107,6 +112,9 @@ impl PhoenixApp {
                     .ok()
                     .flatten()
             });
+        if config.game.directory.is_some() {
+            tracing::debug!("Game detection in {:.1}ms", phase_start.elapsed().as_secs_f32() * 1000.0);
+        }
 
         let status_message = if let Some(ref info) = game_info {
             format!("Game detected: {}", info.version_display())
@@ -148,6 +156,8 @@ impl PhoenixApp {
 
         // Auto-fetch releases for current branch on startup
         app.fetch_releases_for_branch(&branch);
+
+        tracing::info!("Startup complete in {:.1}ms", startup_start.elapsed().as_secs_f32() * 1000.0);
 
         app
     }
