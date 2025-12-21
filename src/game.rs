@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -129,30 +129,34 @@ fn read_version_txt(directory: &Path) -> Option<VersionInfo> {
     // Need at least the SHA to identify the version
     let sha = commit_sha?;
 
-    // Extract date from build number if commit date not available
     // Build number format: "2025-12-13-1446" (YYYY-MM-DD-HHMM)
-    if commit_date.is_none() {
-        if let Some(ref bn) = build_number {
-            // Extract just the date part (first 10 characters: YYYY-MM-DD)
-            if bn.len() >= 10 && bn.chars().nth(4) == Some('-') && bn.chars().nth(7) == Some('-') {
-                commit_date = Some(bn[..10].to_string());
-            }
+    // Extract date for display, but keep full build number for comparison
+    let display_date = if let Some(ref bn) = build_number {
+        // Extract just the date part (first 10 characters: YYYY-MM-DD)
+        if bn.len() >= 10 && bn.chars().nth(4) == Some('-') && bn.chars().nth(7) == Some('-') {
+            Some(bn[..10].to_string())
+        } else {
+            commit_date.clone()
         }
-    }
+    } else {
+        commit_date.clone()
+    };
 
     // Use date as the display version if available (more user-friendly)
     // Format: "2024-01-15 (abc1234)" or just "abc1234" if no date
-    let version = if let Some(ref date) = commit_date {
+    let version = if let Some(ref date) = display_date {
         format!("{} ({})", date, sha)
     } else {
         sha.clone()
     };
 
+    // Store the full build number for precise version comparison
+    // This allows distinguishing between multiple builds on the same day
     Some(VersionInfo {
         version,
         stable: false,
         build_number: None,
-        released_on: commit_date,
+        released_on: build_number.or(commit_date), // Prefer full build number
     })
 }
 
@@ -214,6 +218,11 @@ pub fn launch_game(executable: &Path, params: &str) -> Result<()> {
 
     let mut cmd = Command::new(executable);
 
+    // Set working directory to game directory
+    let working_dir = executable.parent().context("Executable has no parent directory")?;
+    cmd.current_dir(working_dir);
+
+    // Add user params
     if !params.is_empty() {
         // Split params by whitespace (simple approach)
         for param in params.split_whitespace() {
@@ -221,12 +230,12 @@ pub fn launch_game(executable: &Path, params: &str) -> Result<()> {
         }
     }
 
-    // Set working directory to game directory
-    if let Some(parent) = executable.parent() {
-        cmd.current_dir(parent);
-    }
+    tracing::info!(
+        "Launching game: {:?} with working dir: {:?}",
+        executable,
+        working_dir
+    );
 
-    tracing::info!("Launching game: {:?} {}", executable, params);
     cmd.spawn()?;
 
     Ok(())
@@ -406,10 +415,11 @@ mod tests {
         assert!(result.is_some());
 
         let info = result.unwrap();
-        // Should extract date from build number
+        // Should extract date from build number for display, but store full build number
         assert_eq!(info.version, "2025-12-13 (302bb35)");
         assert!(!info.stable);
-        assert_eq!(info.released_on, Some("2025-12-13".to_string()));
+        // released_on stores full build number for precise version comparison
+        assert_eq!(info.released_on, Some("2025-12-13-1446".to_string()));
 
         // Clean up
         std::fs::remove_dir_all(&temp_dir).ok();

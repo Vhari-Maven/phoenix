@@ -4,6 +4,7 @@ mod db;
 mod game;
 mod github;
 mod theme;
+mod update;
 
 use anyhow::Result;
 use std::sync::Arc;

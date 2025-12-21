@@ -160,45 +160,52 @@ src/
 
 ---
 
-### Spiral 4: Download & Update
-**Goal:** Download and install game updates
+### Spiral 4: Download & Update (IN PROGRESS)
+**Goal:** Download and install game updates with smart migration
 
-**Tasks:**
-- [ ] Download release ZIP with progress tracking
-- [ ] Extract ZIP to game directory
-- [ ] Handle existing installation (backup saves first?)
-- [ ] Show download/extract progress in UI
-- [ ] Verify download integrity
+**Phase 1 - Core Download/Update ✅ COMPLETE:**
+- [x] Download release ZIP with progress tracking (bytes/sec, progress bar)
+- [x] Stream download to disk (not memory) with .part temp file
+- [x] Extract ZIP to game directory preserving structure
+- [x] Backup current installation to `previous_version/` before update
+- [x] Restore user directories (save, config, mods, templates, memorial, graveyard, font)
+- [x] Show download/extract progress in UI with phase indicators
+- [x] Install button for fresh installs (no existing game)
+- [x] Update button with precise build number comparison (not just date)
+- [x] Handle new asset naming convention (with-graphics vs tiles)
 
-**Files to modify:**
-- `src/github.rs` - add download functionality
-- `src/utils/archive.rs` - ZIP extraction
-- `src/app.rs` - progress UI state
+**Phase 2 - Smart Migration (TODO):**
+- [ ] Smart mod restoration - only restore custom mods, not official ones
+  - Parse `modinfo.json` to get mod ident
+  - Compare old vs new `data/mods/` directories
+  - Only copy mods not present in new version
+- [ ] Smart tileset restoration - only restore custom tilesets
+  - Parse `tileset.txt` to get tileset name
+  - Compare old vs new `gfx/` directories
+  - Only copy tilesets not present in new version
+- [ ] Smart soundpack restoration - only restore custom soundpacks
+  - Parse soundpack metadata
+  - Compare old vs new `data/sound/` directories
+- [ ] Smart font restoration - only restore fonts not in new version
+  - Compare `font/` and `data/font/` directories
+  - Only copy fonts that don't exist in new version
+- [ ] Add `prevent_save_move` config option (leave saves in place)
+- [ ] Skip debug.log files during config restore
+- [ ] Option to auto-delete `previous_version/` after successful update
 
-**Rust concepts:** Streams, progress callbacks, ZIP handling
+**Files modified:**
+- `src/update.rs` - new module with download, extract, backup, restore logic
+- `src/github.rs` - added `find_windows_asset()`, exposed HTTP client
+- `src/app.rs` - update state, progress polling, Install/Update button logic
+- `src/game.rs` - store full build number for precise version comparison
+- `src/main.rs` - added update module
+- `Cargo.toml` - already had required dependencies (zip, futures)
+
+**Rust concepts:** tokio::sync::watch channels, streaming downloads, spawn_blocking for sync ZIP ops, async file I/O
 
 ---
 
-### Spiral 5: Settings & Persistence
-**Goal:** Full settings UI, window state persistence
-
-**Tasks:**
-- [ ] Implement Settings tab UI
-- [ ] Dark/light theme toggle
-- [ ] Keep launcher open setting
-- [ ] Custom launch parameters
-- [ ] Save/restore window size and position
-
-**Files to modify:**
-- `src/ui/settings_tab.rs` - new file
-- `src/config.rs` - add all settings fields
-- `src/app.rs` - apply settings
-
-**Rust concepts:** More serde, egui styling
-
----
-
-### Spiral 6: Backup System
+### Spiral 5: Backup System
 **Goal:** Create and restore save backups
 
 **Tasks:**
@@ -217,7 +224,7 @@ src/
 
 ---
 
-### Spiral 7: Soundpacks
+### Spiral 6: Soundpacks
 **Goal:** Manage soundpack installation
 
 **Tasks:**
@@ -232,10 +239,11 @@ src/
 
 ---
 
-### Spiral 8: Polish
+### Spiral 7: Polish
 **Goal:** Final refinements
 
 **Tasks:**
+- [ ] Save/restore window size and position
 - [ ] Error dialogs and user feedback
 - [ ] Single instance enforcement
 - [ ] About dialog
@@ -246,5 +254,6 @@ src/
 
 ## Current Status
 
-**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 (Theme System & UX Polish) ✅
-**Next:** Spiral 4 - Download & Update (download releases, extract ZIP, progress tracking)
+**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅
+**In Progress:** Spiral 4 - Download & Update (Phase 1 complete, Phase 2 smart migration pending)
+**Next:** Spiral 4 Phase 2 - Smart migration for mods/tilesets/soundpacks/fonts

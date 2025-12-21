@@ -116,6 +116,11 @@ impl GitHubClient {
         Ok(Self { client })
     }
 
+    /// Get a reference to the underlying HTTP client
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     /// Fetch a release by tag name (returns None if tag doesn't exist)
     /// Also returns rate limit info from the response
     async fn get_release_by_tag(&self, tag: &str) -> (Option<Release>, RateLimitInfo) {
@@ -325,12 +330,46 @@ impl GitHubClient {
         Ok(release)
     }
 
-    /// Find the Windows x64 tiles asset in a release
+    /// Find the Windows x64 graphical asset in a release
+    /// Prefers the version with sounds if available
     pub fn find_windows_asset(release: &Release) -> Option<&ReleaseAsset> {
-        release.assets.iter().find(|asset| {
+        tracing::debug!("Looking for Windows asset in release: {} ({} assets)", release.name, release.assets.len());
+
+        let mut best_match: Option<&ReleaseAsset> = None;
+
+        for asset in &release.assets {
             let name = asset.name.to_lowercase();
-            name.contains("windows") && name.contains("tiles") && name.contains("x64") && name.ends_with(".zip")
-        })
+            let is_windows = name.contains("windows");
+            // Match both old "tiles" naming and new "with-graphics" naming
+            let is_graphical = name.contains("tiles") || name.contains("graphics");
+            let is_x64 = name.contains("x64");
+            let is_zip = name.ends_with(".zip");
+            let has_sounds = name.contains("sounds");
+
+            tracing::debug!(
+                "  Asset: {} -> windows={}, graphical={}, x64={}, zip={}, sounds={}",
+                asset.name, is_windows, is_graphical, is_x64, is_zip, has_sounds
+            );
+
+            if is_windows && is_graphical && is_x64 && is_zip {
+                // Prefer version with sounds
+                if has_sounds || best_match.is_none() {
+                    best_match = Some(asset);
+                    if has_sounds {
+                        // Found best possible match, no need to continue
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(asset) = best_match {
+            tracing::info!("Found matching Windows asset: {}", asset.name);
+            Some(asset)
+        } else {
+            tracing::warn!("No matching Windows x64 graphical asset found in release {}", release.name);
+            None
+        }
     }
 }
 

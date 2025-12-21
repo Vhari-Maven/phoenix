@@ -3,6 +3,7 @@ use eframe::egui::{self, Color32, RichText, Rounding, Vec2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use futures::FutureExt;
 use std::path::PathBuf;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::config::Config;
@@ -10,6 +11,7 @@ use crate::db::Database;
 use crate::game::{self, GameInfo};
 use crate::github::{FetchResult, GitHubClient, RateLimitInfo, Release};
 use crate::theme::{Theme, ThemePreset};
+use crate::update::{self, UpdatePhase, UpdateProgress};
 
 /// Main application state
 pub struct PhoenixApp {
@@ -55,6 +57,16 @@ pub struct PhoenixApp {
     active_tab: Tab,
     /// Whether theme needs to be applied
     theme_dirty: bool,
+
+    // Update state
+    /// Async task for update operation
+    update_task: Option<JoinHandle<Result<()>>>,
+    /// Channel receiver for update progress
+    update_progress_rx: Option<watch::Receiver<UpdateProgress>>,
+    /// Current update progress
+    update_progress: UpdateProgress,
+    /// Error message from last update attempt
+    update_error: Option<String>,
 }
 
 /// Application tabs
@@ -128,6 +140,10 @@ impl PhoenixApp {
             current_theme,
             active_tab: Tab::default(),
             theme_dirty: true, // Apply theme on first frame
+            update_task: None,
+            update_progress_rx: None,
+            update_progress: UpdateProgress::default(),
+            update_error: None,
         };
 
         // Auto-fetch releases for current branch on startup
@@ -145,67 +161,33 @@ impl PhoenixApp {
         }
     }
 
-    /// Check if the selected release is different from the installed version
-    /// Returns (is_update_available, description)
-    fn check_update_status(&self) -> Option<(bool, String)> {
-        let game_info = self.game_info.as_ref()?;
+    /// Simple check: is the selected release different from the installed version?
+    /// Returns true if they are different (can update/switch), false if same or can't compare
+    fn is_selected_release_different(&self) -> bool {
+        let Some(game_info) = &self.game_info else {
+            return false; // No game installed
+        };
         let releases = self.current_releases();
-        let selected_release = self.selected_release_idx.and_then(|i| releases.get(i))?;
-
-        let installed_version = game_info.version_display();
-
-        // For stable releases, compare version strings directly
-        if game_info.is_stable() && self.config.game.branch == "stable" {
-            // Compare stable version tags (e.g., "0.F-3" vs "0.G")
-            let release_version = &selected_release.tag_name;
-            if installed_version == release_version {
-                return Some((false, "Up to date".to_string()));
-            } else {
-                return Some((true, format!("Update: {} -> {}", installed_version, release_version)));
-            }
-        }
-
-        // For experimental builds, the installed version is a commit SHA (7 chars)
-        // and releases have tag names like "cdda-experimental-2024-01-15-1234"
-        // Best approach: compare dates from the release
-        if let Some(version_info) = &game_info.version_info {
-            // If we have a release date for installed version, compare with selected
-            if let Some(ref installed_date) = version_info.released_on {
-                let release_date = &selected_release.published_at[..10]; // YYYY-MM-DD
-                if installed_date == release_date {
-                    return Some((false, format!("Current build ({})", installed_version)));
-                } else if release_date > installed_date.as_str() {
-                    return Some((true, format!("Update available: {} -> {}", installed_date, release_date)));
-                } else {
-                    return Some((false, format!("Installed is newer ({})", installed_version)));
-                }
-            }
-        }
-
-        // Fallback: check if the installed commit SHA appears in the release name or tag
-        // Extract just the SHA part if version contains date (format: "2024-01-15 (abc1234)")
-        let sha_part = if installed_version.contains('(') {
-            installed_version
-                .split('(')
-                .nth(1)
-                .and_then(|s| s.strip_suffix(')'))
-                .unwrap_or(installed_version)
-        } else {
-            installed_version
+        let Some(selected_release) = self.selected_release_idx.and_then(|i| releases.get(i)) else {
+            return false; // No release selected
         };
 
-        let tag_lower = selected_release.tag_name.to_lowercase();
-        let name_lower = selected_release.name.to_lowercase();
-        if tag_lower.contains(&sha_part.to_lowercase()) || name_lower.contains(&sha_part.to_lowercase()) {
-            return Some((false, "Up to date".to_string()));
+        // Compare build numbers - this distinguishes multiple builds on the same day
+        // Installed: build_number like "2025-12-20-2147" stored in released_on
+        // Release tag: like "cdda-experimental-2025-12-20-2147"
+        if let Some(version_info) = &game_info.version_info {
+            if let Some(ref installed_build) = version_info.released_on {
+                // Check if the release tag contains our build number
+                // e.g., "cdda-experimental-2025-12-20-2147" contains "2025-12-20-2147"
+                if selected_release.tag_name.contains(installed_build) {
+                    return false; // Same version
+                }
+                return true; // Different version
+            }
         }
 
-        // Can't determine exact match, assume update is available if latest is selected
-        if self.selected_release_idx == Some(0) {
-            Some((true, "Newer version available".to_string()))
-        } else {
-            Some((false, "Older version selected".to_string()))
-        }
+        // Fallback: assume different (allow update)
+        true
     }
 
     /// Check if we have releases for the given branch
@@ -292,6 +274,167 @@ impl PhoenixApp {
         }
     }
 
+    /// Start the update process for the selected release
+    fn start_update(&mut self) {
+        // Don't start if already updating
+        if self.update_task.is_some() {
+            return;
+        }
+
+        // Get the selected release and its Windows asset
+        let releases = self.current_releases();
+        let release = match self.selected_release_idx.and_then(|i| releases.get(i)) {
+            Some(r) => r.clone(),
+            None => {
+                self.update_error = Some("No release selected".to_string());
+                return;
+            }
+        };
+
+        let asset = match GitHubClient::find_windows_asset(&release) {
+            Some(a) => a.clone(),
+            None => {
+                self.update_error = Some("No Windows build available for this release".to_string());
+                return;
+            }
+        };
+
+        // Get the game directory
+        let game_dir = match &self.config.game.directory {
+            Some(dir) => PathBuf::from(dir),
+            None => {
+                self.update_error = Some("No game directory configured".to_string());
+                return;
+            }
+        };
+
+        // Get download directory
+        let download_dir = match update::download_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                self.update_error = Some(format!("Failed to get download directory: {}", e));
+                return;
+            }
+        };
+
+        let zip_path = download_dir.join(&asset.name);
+        let download_url = asset.browser_download_url.clone();
+
+        // Create progress channel
+        let (progress_tx, progress_rx) = watch::channel(UpdateProgress::default());
+        self.update_progress_rx = Some(progress_rx);
+        self.update_error = None;
+        self.update_progress = UpdateProgress {
+            phase: UpdatePhase::Downloading,
+            total_bytes: asset.size,
+            ..Default::default()
+        };
+
+        // Clone what we need for the async task
+        let client = self.github_client.clone();
+
+        self.status_message = format!("Downloading {}...", release.name);
+        tracing::info!("Starting update: {} from {}", asset.name, download_url);
+
+        // Spawn the update task
+        self.update_task = Some(tokio::spawn(async move {
+            // Phase 1: Download
+            let result = update::download_asset(
+                client.client().clone(),
+                download_url,
+                zip_path.clone(),
+                progress_tx.clone(),
+            ).await?;
+
+            tracing::info!("Download complete: {} bytes", result.bytes);
+
+            // Phase 2: Install (backup, extract, restore)
+            update::install_update(
+                result.file_path,
+                game_dir,
+                progress_tx,
+            ).await?;
+
+            Ok(())
+        }));
+    }
+
+    /// Poll the update task for progress and completion
+    fn poll_update_task(&mut self, ctx: &egui::Context) {
+        // Update progress from channel
+        if let Some(rx) = &mut self.update_progress_rx {
+            if rx.has_changed().unwrap_or(false) {
+                self.update_progress = rx.borrow_and_update().clone();
+
+                // Update status message based on phase
+                self.status_message = self.update_progress.phase.description().to_string();
+            }
+        }
+
+        // Check if task is complete
+        if let Some(task) = &mut self.update_task {
+            if task.is_finished() {
+                let task = self.update_task.take().unwrap();
+                self.update_progress_rx = None;
+
+                match task.now_or_never() {
+                    Some(Ok(Ok(()))) => {
+                        self.update_progress.phase = UpdatePhase::Complete;
+                        self.status_message = "Update complete! Refreshing game info...".to_string();
+                        tracing::info!("Update completed successfully");
+
+                        // Refresh game info
+                        self.refresh_game_info();
+                    }
+                    Some(Ok(Err(e))) => {
+                        self.update_progress.phase = UpdatePhase::Failed;
+                        let msg = e.to_string();
+                        tracing::error!("Update failed: {}", msg);
+                        self.update_error = Some(msg.clone());
+                        self.status_message = format!("Update failed: {}", msg);
+                    }
+                    Some(Err(e)) => {
+                        self.update_progress.phase = UpdatePhase::Failed;
+                        let msg = format!("Update task panicked: {}", e);
+                        tracing::error!("{}", msg);
+                        self.update_error = Some(msg.clone());
+                        self.status_message = msg;
+                    }
+                    None => {
+                        tracing::warn!("Update task not ready despite is_finished()");
+                    }
+                }
+            } else {
+                // Task still running, keep polling
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    /// Refresh game info after an update
+    fn refresh_game_info(&mut self) {
+        if let Some(ref dir) = self.config.game.directory {
+            match game::detect_game_with_db(&PathBuf::from(dir), self.db.as_ref()) {
+                Ok(Some(info)) => {
+                    self.status_message = format!("Game updated to: {}", info.version_display());
+                    self.game_info = Some(info);
+                }
+                Ok(None) => {
+                    self.status_message = "Update complete, but game not detected".to_string();
+                    self.game_info = None;
+                }
+                Err(e) => {
+                    self.status_message = format!("Update complete, detection error: {}", e);
+                }
+            }
+        }
+    }
+
+    /// Check if an update is currently in progress
+    fn is_updating(&self) -> bool {
+        self.update_task.is_some()
+    }
+
     /// Open directory picker and update game directory
     fn browse_for_directory(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
@@ -360,6 +503,7 @@ impl eframe::App for PhoenixApp {
 
         // Poll async tasks
         self.poll_releases_task(ctx);
+        self.poll_update_task(ctx);
 
         let theme = &self.current_theme;
 
@@ -614,23 +758,45 @@ impl PhoenixApp {
                 ui.label(RichText::new(warning).color(theme.warning).size(11.0));
             }
 
-            // Update status indicator
-            if let Some((is_update, status_text)) = app.check_update_status() {
+            // Update status indicator (only show when not updating)
+            if !app.is_updating() && app.selected_release_idx.is_some() {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if is_update {
-                        // Update available badge
+                    if app.game_info.is_none() && app.config.game.directory.is_some() {
+                        // No game installed - show install prompt
+                        egui::Frame::none()
+                            .fill(theme.accent.gamma_multiply(0.2))
+                            .rounding(4.0)
+                            .inner_margin(egui::vec2(8.0, 4.0))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new("Ready to install").color(theme.accent).strong());
+                            });
+                    } else if app.is_selected_release_different() {
+                        // Different version selected - can update
                         egui::Frame::none()
                             .fill(theme.success.gamma_multiply(0.2))
                             .rounding(4.0)
                             .inner_margin(egui::vec2(8.0, 4.0))
                             .show(ui, |ui| {
-                                ui.label(RichText::new(format!("UPDATE {}", status_text)).color(theme.success).strong());
+                                ui.label(RichText::new("Update available").color(theme.success).strong());
                             });
-                    } else {
-                        ui.label(RichText::new(status_text).color(theme.text_muted));
+                    } else if app.game_info.is_some() {
+                        // Same version
+                        ui.label(RichText::new("Up to date").color(theme.text_muted));
                     }
                 });
+            }
+
+            // Show update progress
+            if app.is_updating() || app.update_progress.phase == UpdatePhase::Complete || app.update_progress.phase == UpdatePhase::Failed {
+                ui.add_space(12.0);
+                app.render_update_progress(ui, &theme);
+            }
+
+            // Show update error
+            if let Some(ref err) = app.update_error {
+                ui.add_space(8.0);
+                ui.label(RichText::new(format!("Error: {}", err)).color(theme.error));
             }
         });
 
@@ -683,29 +849,54 @@ impl PhoenixApp {
         ui.add_space(ui.available_height() - 50.0);
 
         // Bottom action buttons - full width row
+        let is_updating = self.is_updating();
+
         ui.horizontal(|ui| {
             let button_width = (ui.available_width() - 16.0) / 2.0;
 
-            // Update button - left side
-            let update_available = self.check_update_status().map(|(u, _)| u).unwrap_or(false);
+            // Simple logic:
+            // - No game installed + directory + release selected → Install
+            // - Game installed + different release selected → Update/Switch
+            // - Same version or no release selected → Disabled
+            let has_game = self.game_info.is_some();
+            let has_directory = self.config.game.directory.is_some();
+            let has_release = self.selected_release_idx.is_some();
+
+            // Check if selected release is different from installed version
+            let is_different_version = self.is_selected_release_different();
+
+            let can_install = !has_game && has_directory && has_release && !is_updating;
+            let can_update = has_game && has_release && is_different_version && !is_updating;
+            let can_click = can_install || can_update;
+
+            let update_label = if is_updating {
+                "Updating..."
+            } else if can_install {
+                "Install Game"
+            } else if can_update {
+                "Update Game"
+            } else {
+                "Up to Date"
+            };
+
             let update_btn = egui::Button::new(
-                RichText::new(if update_available { "Update Game" } else { "Update" })
-                    .color(if update_available { theme.bg_darkest } else { theme.text_secondary })
+                RichText::new(update_label)
+                    .color(if can_click { theme.bg_darkest } else { theme.text_secondary })
                     .size(16.0)
                     .strong()
             )
-            .fill(if update_available { theme.success } else { theme.bg_medium })
+            .fill(if can_click { theme.success } else { theme.bg_medium })
             .min_size(Vec2::new(button_width, 44.0))
             .rounding(6.0);
 
-            if ui.add_enabled(update_available && self.selected_release_idx.is_some(), update_btn).clicked() {
-                // TODO: Implement update (Spiral 4)
+            if ui.add_enabled(can_click, update_btn).clicked() {
+                self.start_update();
             }
 
             ui.add_space(16.0);
 
-            // Launch button - right side, prominent
-            let can_launch = self.game_info.is_some();
+            // Launch button - right side, prominent (disabled during update)
+            let can_launch = self.game_info.is_some() && !is_updating;
             let launch_btn = egui::Button::new(
                 RichText::new("Launch Game")
                     .color(if can_launch { theme.bg_darkest } else { theme.text_muted })
@@ -865,6 +1056,102 @@ impl PhoenixApp {
                     self.save_config();
                 }
             });
+    }
+
+    /// Render update progress UI
+    fn render_update_progress(&self, ui: &mut egui::Ui, theme: &Theme) {
+        let progress = &self.update_progress;
+
+        egui::Frame::none()
+            .fill(theme.bg_light.gamma_multiply(0.5))
+            .rounding(6.0)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+
+                // Phase label with icon
+                let (phase_text, phase_color) = match progress.phase {
+                    UpdatePhase::Downloading => ("Downloading...", theme.accent),
+                    UpdatePhase::BackingUp => ("Backing up current installation...", theme.warning),
+                    UpdatePhase::Extracting => ("Extracting files...", theme.accent),
+                    UpdatePhase::Restoring => ("Restoring saves and settings...", theme.accent),
+                    UpdatePhase::Complete => ("Update complete!", theme.success),
+                    UpdatePhase::Failed => ("Update failed", theme.error),
+                    UpdatePhase::Idle => ("Ready", theme.text_muted),
+                };
+
+                ui.label(RichText::new(phase_text).color(phase_color).size(13.0).strong());
+                ui.add_space(8.0);
+
+                // Progress bar for download/extract phases
+                match progress.phase {
+                    UpdatePhase::Downloading => {
+                        let fraction = progress.download_fraction();
+                        ui.add(egui::ProgressBar::new(fraction).show_percentage());
+
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            // Downloaded / Total
+                            let downloaded = format_size(progress.bytes_downloaded);
+                            let total = format_size(progress.total_bytes);
+                            ui.label(RichText::new(format!("{} / {}", downloaded, total)).color(theme.text_muted).size(11.0));
+
+                            ui.add_space(16.0);
+
+                            // Speed
+                            if progress.speed > 0 {
+                                let speed = format_size(progress.speed);
+                                ui.label(RichText::new(format!("{}/s", speed)).color(theme.text_muted).size(11.0));
+                            }
+                        });
+                    }
+                    UpdatePhase::Extracting => {
+                        let fraction = progress.extract_fraction();
+                        ui.add(egui::ProgressBar::new(fraction).show_percentage());
+
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(format!(
+                                "{} / {} files",
+                                progress.files_extracted,
+                                progress.total_files
+                            ))
+                            .color(theme.text_muted)
+                            .size(11.0)
+                        );
+
+                        if !progress.current_file.is_empty() {
+                            ui.label(
+                                RichText::new(&progress.current_file)
+                                    .color(theme.text_muted)
+                                    .size(10.0)
+                            );
+                        }
+                    }
+                    UpdatePhase::BackingUp | UpdatePhase::Restoring => {
+                        // Indeterminate progress (spinner-like)
+                        ui.add(egui::ProgressBar::new(0.0).animate(true));
+                    }
+                    _ => {}
+                }
+            });
+    }
+}
+
+/// Format bytes as human-readable size
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
     }
 }
 
