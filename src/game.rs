@@ -304,4 +304,105 @@ mod tests {
         // Clean up
         std::fs::remove_dir_all(&temp_dir).ok();
     }
+
+    #[test]
+    fn test_read_version_txt_valid() {
+        let temp_dir = std::env::temp_dir().join("phoenix_test_version_txt");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create a VERSION.txt with commit sha
+        let version_file = temp_dir.join("VERSION.txt");
+        std::fs::write(
+            &version_file,
+            "Main branch: master\ncommit sha: abc1234567890def\ncommit date: 2024-01-15\n",
+        )
+        .unwrap();
+
+        let result = read_version_txt(&temp_dir);
+        assert!(result.is_some());
+
+        let info = result.unwrap();
+        assert_eq!(info.version, "abc1234"); // First 7 characters
+        assert!(!info.stable);
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_read_version_txt_missing() {
+        let temp_dir = std::env::temp_dir().join("phoenix_test_no_version");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let result = read_version_txt(&temp_dir);
+        assert!(result.is_none());
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_read_version_txt_no_commit_sha() {
+        let temp_dir = std::env::temp_dir().join("phoenix_test_version_no_sha");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create a VERSION.txt without commit sha line
+        let version_file = temp_dir.join("VERSION.txt");
+        std::fs::write(&version_file, "Some other content\nNo sha here\n").unwrap();
+
+        let result = read_version_txt(&temp_dir);
+        assert!(result.is_none());
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_game_info_version_display() {
+        let info_with_version = GameInfo {
+            directory: PathBuf::from("C:\\test"),
+            executable: PathBuf::from("C:\\test\\game.exe"),
+            sha256: "abc123".to_string(),
+            version_info: Some(VersionInfo {
+                version: "0.F-3".to_string(),
+                stable: true,
+                build_number: None,
+                released_on: None,
+            }),
+            saves_size: 0,
+        };
+
+        assert_eq!(info_with_version.version_display(), "0.F-3");
+        assert!(info_with_version.is_stable());
+
+        let info_without_version = GameInfo {
+            directory: PathBuf::from("C:\\test"),
+            executable: PathBuf::from("C:\\test\\game.exe"),
+            sha256: "abc123".to_string(),
+            version_info: None,
+            saves_size: 0,
+        };
+
+        assert_eq!(info_without_version.version_display(), "Unknown");
+        assert!(!info_without_version.is_stable());
+    }
+
+    #[test]
+    fn test_game_info_experimental() {
+        let info = GameInfo {
+            directory: PathBuf::from("C:\\test"),
+            executable: PathBuf::from("C:\\test\\game.exe"),
+            sha256: "abc123".to_string(),
+            version_info: Some(VersionInfo {
+                version: "abc1234".to_string(),
+                stable: false,
+                build_number: Some(12345),
+                released_on: Some("2024-01-15".to_string()),
+            }),
+            saves_size: 1024,
+        };
+
+        assert_eq!(info.version_display(), "abc1234");
+        assert!(!info.is_stable());
+    }
 }
