@@ -1,0 +1,150 @@
+use anyhow::Result;
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
+
+/// Game executable names to look for
+const GAME_EXECUTABLES: &[&str] = &["cataclysm-tiles.exe", "cataclysm.exe"];
+
+/// Files that indicate a world/save exists
+const WORLD_FILES: &[&str] = &["worldoptions.json", "worldoptions.txt", "master.gsav"];
+
+/// Information about a detected game installation
+#[derive(Debug, Clone)]
+pub struct GameInfo {
+    /// Path to the game directory
+    pub directory: PathBuf,
+    /// Path to the game executable
+    pub executable: PathBuf,
+    /// SHA256 hash of the executable (for version detection)
+    pub sha256: String,
+    /// Detected version (if known)
+    pub version: Option<String>,
+    /// Size of save directory in bytes
+    pub saves_size: u64,
+}
+
+/// Detect game installation in the given directory
+pub fn detect_game(directory: &Path) -> Result<Option<GameInfo>> {
+    // Look for game executable
+    let executable = GAME_EXECUTABLES
+        .iter()
+        .map(|name| directory.join(name))
+        .find(|path| path.exists());
+
+    let Some(executable) = executable else {
+        return Ok(None);
+    };
+
+    // Calculate SHA256 of executable
+    let sha256 = calculate_sha256(&executable)?;
+
+    // Calculate saves size
+    let saves_dir = directory.join("save");
+    let saves_size = if saves_dir.exists() {
+        calculate_dir_size(&saves_dir).unwrap_or(0)
+    } else {
+        0
+    };
+
+    Ok(Some(GameInfo {
+        directory: directory.to_path_buf(),
+        executable,
+        sha256,
+        version: None, // TODO: Look up version from hash
+        saves_size,
+    }))
+}
+
+/// Calculate SHA256 hash of a file
+pub fn calculate_sha256(path: &Path) -> Result<String> {
+    let bytes = std::fs::read(path)?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let result = hasher.finalize();
+    Ok(format!("{:x}", result))
+}
+
+/// Calculate total size of a directory recursively
+pub fn calculate_dir_size(path: &Path) -> Result<u64> {
+    let mut total = 0;
+
+    if path.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                total += calculate_dir_size(&path)?;
+            } else {
+                total += entry.metadata()?.len();
+            }
+        }
+    }
+
+    Ok(total)
+}
+
+/// Check if a directory contains world/save data
+pub fn has_saves(directory: &Path) -> bool {
+    let save_dir = directory.join("save");
+    if !save_dir.exists() {
+        return false;
+    }
+
+    // Look for world directories containing world files
+    if let Ok(entries) = std::fs::read_dir(&save_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                for world_file in WORLD_FILES {
+                    if path.join(world_file).exists() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
+/// Launch the game
+pub fn launch_game(executable: &Path, params: &str) -> Result<()> {
+    use std::process::Command;
+
+    let mut cmd = Command::new(executable);
+
+    if !params.is_empty() {
+        // Split params by whitespace (simple approach)
+        for param in params.split_whitespace() {
+            cmd.arg(param);
+        }
+    }
+
+    // Set working directory to game directory
+    if let Some(parent) = executable.parent() {
+        cmd.current_dir(parent);
+    }
+
+    tracing::info!("Launching game: {:?} {}", executable, params);
+    cmd.spawn()?;
+
+    Ok(())
+}
+
+/// Format byte size to human-readable string
+pub fn format_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+
+    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        format!("{} {}", bytes, UNITS[0])
+    } else {
+        format!("{:.2} {}", size, UNITS[unit_index])
+    }
+}
