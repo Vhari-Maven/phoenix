@@ -193,17 +193,29 @@ src/
 - [x] Skip debug.log files during config restore
 - [x] Option to auto-delete `previous_version/` after successful update
 
+**Phase 3 - Performance Optimization ✅ COMPLETE:**
+- [x] Deferred backup deletion - rename old backup instead of deleting (37s → 0s)
+  - Rename `previous_version` to `previous_version_old` (instant)
+  - Delete old backup in background after update completes
+  - Self-healing: stale directories cleaned on next update
+- [x] Background cleanup with `remove_dir_all` crate
+- [x] Fix `prevent_save_move` to skip saves during backup phase (was only skipping restore)
+- [x] Parallel stable release fetching
+- [x] Cache game directory size calculations
+- [x] Total update time reduced from ~54s to ~18s
+
 **Files modified:**
 - `src/migration.rs` - new module with identity-based content detection and smart migration
-- `src/update.rs` - download, extract, backup, smart restore logic
-- `src/github.rs` - added `find_windows_asset()`, exposed HTTP client
+- `src/update.rs` - download, extract, backup, smart restore logic, deferred deletion
+- `src/github.rs` - added `find_windows_asset()`, exposed HTTP client, parallel stable fetching
 - `src/app.rs` - update state, progress polling, Install/Update button logic, Settings UI
-- `src/game.rs` - store full build number for precise version comparison
+- `src/game.rs` - store full build number for precise version comparison, cached dir size
+- `src/db.rs` - parallel version lookups
 - `src/config.rs` - added `prevent_save_move`, `remove_previous_version` options
 - `src/main.rs` - added update and migration modules
-- `Cargo.toml` - already had required dependencies (zip, futures)
+- `Cargo.toml` - added remove_dir_all crate for faster directory deletion
 
-**Rust concepts:** tokio::sync::watch channels, streaming downloads, spawn_blocking for sync ZIP ops, async file I/O, identity-based set difference for custom content detection
+**Rust concepts:** tokio::sync::watch channels, streaming downloads, spawn_blocking for sync ZIP ops, async file I/O, identity-based set difference for custom content detection, deferred deletion pattern, background task cleanup
 
 ---
 

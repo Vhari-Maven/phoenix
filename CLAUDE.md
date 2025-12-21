@@ -26,6 +26,7 @@ The original Python launcher source (v1.7.12) is in `reference/` (gitignored). U
 - **Database:** rusqlite (SQLite)
 - **Archives:** zip crate
 - **Images:** image crate (icon loading)
+- **File ops:** remove_dir_all crate (fast directory deletion)
 - **Windows APIs:** windows crate
 
 ## Build & Run
@@ -69,7 +70,9 @@ See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
 - Spiral 2: Version Detection - SHA256 lookup, SQLite caching, VERSION.txt fallback
 - Spiral 3: GitHub Integration - fetch releases, markdown changelog, rate limiting
 - Spiral 3.5: Theme System - 5 color presets, improved UI layout, custom icon
-- Spiral 4: Download & Update - progress tracking, smart migration for mods/tilesets/soundpacks/fonts
+- Spiral 4: Download & Update - progress tracking, smart migration, performance optimization
+  - Update time reduced from ~54s to ~18s via deferred backup deletion
+  - Background cleanup doesn't block user
 
 **Next:** Spiral 5 - Backup System
 
