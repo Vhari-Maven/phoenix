@@ -16,8 +16,9 @@ The original Python launcher source (v1.7.12) is in `reference/` (gitignored). U
 
 ## Tech Stack
 
-- **Language:** Rust
-- **GUI:** egui + eframe (or iced - TBD)
+- **Language:** Rust (2024 edition)
+- **Target:** Windows x64 only
+- **GUI:** egui + eframe
 - **Async Runtime:** tokio
 - **HTTP:** reqwest
 - **Serialization:** serde, serde_json, toml

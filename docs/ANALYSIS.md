@@ -120,7 +120,7 @@ cddagl/
 - 0.D Danny
 - 0.C Cooper
 
-Each includes direct download URLs for x64 and x86 Windows builds.
+Each includes direct download URLs for x64 and x86 Windows builds. Phoenix targets x64 only.
 
 ### 3. Backup Management
 
@@ -364,7 +364,7 @@ Uses Windows Shell API via `pythoncom` for:
 
 | Component | Python Original | Rust Replacement |
 |-----------|-----------------|------------------|
-| GUI | PySide6 (Qt) | `egui` + `eframe` or `iced` |
+| GUI | PySide6 (Qt) | `egui` + `eframe` |
 | HTTP Client | QNetworkAccessManager | `reqwest` (async) |
 | JSON | json module | `serde_json` |
 | Database | SQLAlchemy + SQLite | `rusqlite` or JSON config |
@@ -421,10 +421,13 @@ Uses Windows Shell API via `pythoncom` for:
 ### Key Rust Crates
 
 ```toml
+[package]
+edition = "2024"  # Rust 2024 edition
+
 [dependencies]
 # GUI
-eframe = "0.28"
-egui = "0.28"
+eframe = "0.29"
+egui = "0.29"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -444,14 +447,20 @@ zip = "2"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
-# Windows
+# Windows (x64 only)
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+] }
 
 # Utilities
 sha2 = "0.10"           # SHA256 hashing
 directories = "5"        # Platform directories
 chrono = "0.4"          # Date/time
+thiserror = "1"         # Error types
+anyhow = "1"            # Error handling
 ```
 
 ---

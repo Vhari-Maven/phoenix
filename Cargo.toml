@@ -1,7 +1,7 @@
 [package]
 name = "phoenix"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A fast, native game launcher for Cataclysm: Dark Days Ahead"
 authors = ["Phoenix Contributors"]
 license = "MIT"
