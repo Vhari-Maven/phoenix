@@ -174,3 +174,80 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_default_values() {
+        let config = Config::default();
+
+        // Launcher defaults
+        assert!(config.launcher.dark_theme);
+        assert!(!config.launcher.keep_open);
+        assert_eq!(config.launcher.locale, "en");
+
+        // Game defaults
+        assert!(config.game.directory.is_none());
+        assert_eq!(config.game.branch, "experimental");
+        assert!(config.game.command_params.is_empty());
+
+        // Update defaults
+        assert!(config.updates.check_on_startup);
+        assert_eq!(config.updates.max_concurrent_downloads, 4);
+
+        // Backup defaults
+        assert_eq!(config.backups.max_count, 10);
+        assert_eq!(config.backups.compression_level, 6);
+    }
+
+    #[test]
+    fn test_config_serialization_roundtrip() {
+        // Create a config with custom values
+        let mut config = Config::default();
+        config.game.directory = Some("C:\\Games\\CDDA".to_string());
+        config.game.branch = "stable".to_string();
+        config.launcher.dark_theme = false;
+
+        // Serialize to TOML
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+
+        // Deserialize back
+        let loaded: Config = toml::from_str(&toml_str).unwrap();
+
+        // Verify values match
+        assert_eq!(loaded.game.directory, Some("C:\\Games\\CDDA".to_string()));
+        assert_eq!(loaded.game.branch, "stable");
+        assert!(!loaded.launcher.dark_theme);
+    }
+
+    #[test]
+    fn test_config_partial_toml() {
+        // Test that missing fields use defaults
+        let toml_str = r#"
+[game]
+directory = "C:\\Test"
+"#;
+
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        // Specified value
+        assert_eq!(config.game.directory, Some("C:\\Test".to_string()));
+
+        // Defaults for unspecified values
+        assert_eq!(config.game.branch, "experimental");
+        assert!(config.launcher.dark_theme);
+        assert_eq!(config.updates.max_concurrent_downloads, 4);
+    }
+
+    #[test]
+    fn test_config_empty_toml() {
+        // Empty TOML should give all defaults
+        let config: Config = toml::from_str("").unwrap();
+
+        assert!(config.game.directory.is_none());
+        assert_eq!(config.game.branch, "experimental");
+        assert!(config.launcher.dark_theme);
+    }
+}

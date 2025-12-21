@@ -148,3 +148,91 @@ pub fn format_size(bytes: u64) -> String {
         format!("{:.2} {}", size, UNITS[unit_index])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(1), "1 B");
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_size_kibibytes() {
+        assert_eq!(format_size(1024), "1.00 KiB");
+        assert_eq!(format_size(1536), "1.50 KiB");
+        assert_eq!(format_size(10240), "10.00 KiB");
+    }
+
+    #[test]
+    fn test_format_size_mebibytes() {
+        assert_eq!(format_size(1024 * 1024), "1.00 MiB");
+        assert_eq!(format_size(150 * 1024 * 1024), "150.00 MiB"); // 150 MB warning threshold
+    }
+
+    #[test]
+    fn test_format_size_gibibytes() {
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GiB");
+        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GiB");
+    }
+
+    #[test]
+    fn test_calculate_sha256() {
+        // Create a temp file with known content
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("phoenix_test_sha256.txt");
+
+        {
+            let mut file = std::fs::File::create(&temp_file).unwrap();
+            file.write_all(b"hello world").unwrap();
+        }
+
+        let hash = calculate_sha256(&temp_file).unwrap();
+
+        // SHA256 of "hello world" is known
+        assert_eq!(
+            hash,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+
+        // Clean up
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[test]
+    fn test_calculate_dir_size() {
+        // Create a temp directory with some files
+        let temp_dir = std::env::temp_dir().join("phoenix_test_dir_size");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create two files with known sizes
+        let file1 = temp_dir.join("file1.txt");
+        let file2 = temp_dir.join("file2.txt");
+
+        std::fs::write(&file1, "12345").unwrap(); // 5 bytes
+        std::fs::write(&file2, "1234567890").unwrap(); // 10 bytes
+
+        let size = calculate_dir_size(&temp_dir).unwrap();
+        assert_eq!(size, 15);
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_detect_game_no_executable() {
+        let temp_dir = std::env::temp_dir().join("phoenix_test_no_game");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let result = detect_game(&temp_dir).unwrap();
+        assert!(result.is_none());
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+}
