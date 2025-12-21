@@ -115,7 +115,7 @@ impl Default for GitHubClient {
 }
 
 /// Filter releases by branch type
-pub fn filter_releases_by_branch(releases: &[Release], branch: &str) -> Vec<&Release> {
+pub fn filter_releases_by_branch<'a>(releases: &'a [Release], branch: &str) -> Vec<&'a Release> {
     releases
         .iter()
         .filter(|r| {
