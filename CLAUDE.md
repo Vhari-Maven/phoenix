@@ -8,6 +8,7 @@ This is a ground-up rebuild of the CDDA Game Launcher, aiming for sub-second sta
 
 ## Documentation
 
+- [docs/PLAN.md](docs/PLAN.md) - Development plan with spiral roadmap and current progress
 - [docs/ANALYSIS.md](docs/ANALYSIS.md) - Comprehensive analysis of the original Python launcher, including features, APIs, data models, and migration notes
 
 ## Reference
@@ -37,39 +38,29 @@ cargo run
 ```
 phoenix/
 ├── docs/
+│   ├── PLAN.md          # Development roadmap
 │   └── ANALYSIS.md      # Original launcher analysis
 ├── reference/           # Original Python source (gitignored)
 ├── src/
-│   ├── main.rs          # Entry point
+│   ├── main.rs          # Entry point, logging setup
 │   ├── app.rs           # Application state and UI
-│   ├── config.rs        # Configuration management
+│   ├── config.rs        # Configuration management (TOML)
+│   ├── db.rs            # SQLite database for version caching
 │   ├── github.rs        # GitHub API client
-│   ├── game.rs          # Game detection and launching
-│   └── ...
+│   └── game.rs          # Game detection and launching
 ├── Cargo.toml
 └── CLAUDE.md
 ```
 
-## Development Phases
+## Development Progress
 
-### Phase 1 - Core (MVP)
-- [ ] Game directory selection
-- [ ] Version detection (SHA256 of executable)
-- [ ] Game launching
-- [ ] Branch selection (stable/experimental)
-- [ ] Fetch available builds from GitHub
-- [ ] Download and extract game updates
+See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
 
-### Phase 2 - Essential
-- [ ] Settings persistence (TOML config)
-- [ ] Backup creation and restoration
-- [ ] Dark/light theme
+**Completed:**
+- Spiral 1: Game Launching - browse, detect, launch game
+- Spiral 2: Version Detection - SHA256 lookup, SQLite caching, VERSION.txt fallback
 
-### Phase 3 - Complete
-- [ ] Soundpack management
-- [ ] Multiple game directories
-- [ ] Internationalization
-- [ ] Self-update
+**Next:** Spiral 3 - GitHub Integration (fetch releases, display changelog)
 
 ## Key External APIs
 
@@ -77,9 +68,10 @@ phoenix/
 - Game releases: `GET /repos/CleverRaven/Cataclysm-DDA/releases`
 - Rate limit: 60 requests/hour (unauthenticated)
 
-## Configuration
+## Data Storage
 
-Config stored at: `%APPDATA%\phoenix\config.toml`
+- **Config:** `%APPDATA%\phoenix\Phoenix\config\config.toml`
+- **Database:** `%APPDATA%\phoenix\Phoenix\data\phoenix.db` (SQLite, version cache)
 
 ```toml
 [launcher]
