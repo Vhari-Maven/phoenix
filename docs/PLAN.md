@@ -129,6 +129,37 @@ src/
 
 ---
 
+### Spiral 3.5: Theme System & UX Polish ✅ COMPLETE
+**Goal:** Add theme customization and improve UI appearance
+
+**Tasks:**
+- [x] Create Theme struct with color definitions
+- [x] Add 5 built-in theme presets (Amber, Purple, Cyan, Green, Catppuccin)
+- [x] Store theme choice in config
+- [x] Apply theme colors to egui Visuals
+- [x] Add theme dropdown in Settings tab with color preview swatches
+- [x] Implement proper tab navigation
+- [x] Add visual grouping with frames/cards for sections
+- [x] Richer game info display (version, executable, saves in columns)
+- [x] Prominent Launch button with accent color
+- [x] Contextual Update button (changes when update available)
+- [x] Changelog improvements (date header, better scrolling)
+- [x] Settings tab with Appearance, Behavior, and Game sections
+- [x] Custom application icon (flame/phoenix SVG converted to PNG)
+
+**Files modified:**
+- `src/theme.rs` - new Theme struct, ThemePreset enum, 5 color schemes
+- `src/config.rs` - replaced dark_theme bool with ThemePreset
+- `src/app.rs` - themed UI, tab system, section frames, improved layout
+- `src/main.rs` - added theme module, custom icon loading
+- `assets/icon.svg` - phoenix flame icon source
+- `assets/icon.png` - embedded icon for window
+- `Cargo.toml` - added image crate for icon loading
+
+**Rust concepts:** egui Visuals customization, Color32, RichText styling, include_bytes! macro, image crate
+
+---
+
 ### Spiral 4: Download & Update
 **Goal:** Download and install game updates
 
@@ -215,5 +246,5 @@ src/
 
 ## Current Status
 
-**Completed:** Spiral 1 - Game Launching ✅, Spiral 2 - Game Detection ✅, Spiral 3 - GitHub Integration ✅
+**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 (Theme System & UX Polish) ✅
 **Next:** Spiral 4 - Download & Update (download releases, extract ZIP, progress tracking)

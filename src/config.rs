@@ -2,6 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::theme::ThemePreset;
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -29,9 +31,9 @@ impl Default for Config {
 /// Launcher appearance and behavior settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
-    /// Enable dark theme
+    /// Theme preset name
     #[serde(default)]
-    pub dark_theme: bool,
+    pub theme: ThemePreset,
     /// Keep launcher open after game closes
     #[serde(default)]
     pub keep_open: bool,
@@ -43,7 +45,7 @@ pub struct LauncherConfig {
 impl Default for LauncherConfig {
     fn default() -> Self {
         Self {
-            dark_theme: true,
+            theme: ThemePreset::default(),
             keep_open: false,
             locale: default_locale(),
         }
@@ -184,7 +186,7 @@ mod tests {
         let config = Config::default();
 
         // Launcher defaults
-        assert!(config.launcher.dark_theme);
+        assert_eq!(config.launcher.theme, ThemePreset::Amber);
         assert!(!config.launcher.keep_open);
         assert_eq!(config.launcher.locale, "en");
 
@@ -208,7 +210,7 @@ mod tests {
         let mut config = Config::default();
         config.game.directory = Some("C:\\Games\\CDDA".to_string());
         config.game.branch = "stable".to_string();
-        config.launcher.dark_theme = false;
+        config.launcher.theme = ThemePreset::Purple;
 
         // Serialize to TOML
         let toml_str = toml::to_string_pretty(&config).unwrap();
@@ -219,7 +221,7 @@ mod tests {
         // Verify values match
         assert_eq!(loaded.game.directory, Some("C:\\Games\\CDDA".to_string()));
         assert_eq!(loaded.game.branch, "stable");
-        assert!(!loaded.launcher.dark_theme);
+        assert_eq!(loaded.launcher.theme, ThemePreset::Purple);
     }
 
     #[test]
@@ -237,7 +239,7 @@ directory = "C:\\Test"
 
         // Defaults for unspecified values
         assert_eq!(config.game.branch, "experimental");
-        assert!(config.launcher.dark_theme);
+        assert_eq!(config.launcher.theme, ThemePreset::Amber);
         assert_eq!(config.updates.max_concurrent_downloads, 4);
     }
 
@@ -248,6 +250,6 @@ directory = "C:\\Test"
 
         assert!(config.game.directory.is_none());
         assert_eq!(config.game.branch, "experimental");
-        assert!(config.launcher.dark_theme);
+        assert_eq!(config.launcher.theme, ThemePreset::Amber);
     }
 }

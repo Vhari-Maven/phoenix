@@ -37,6 +37,9 @@ rfd = "0.15"
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
 
+# Image loading (for window icon)
+image = "0.25"
+
 # Utilities
 sha2 = "0.10"
 directories = "5"
