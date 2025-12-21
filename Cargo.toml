@@ -32,6 +32,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # File dialogs
 rfd = "0.15"
 
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 # Utilities
 sha2 = "0.10"
 directories = "5"

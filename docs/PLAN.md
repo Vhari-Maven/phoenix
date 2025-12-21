@@ -57,7 +57,7 @@ src/
 1. **State Management**: Single `PhoenixApp` struct owns all state; UI components borrow from it
 2. **Async Strategy**: Use tokio for I/O; communicate with UI via channels or polling
 3. **Error Handling**: `anyhow` for application errors, `thiserror` for library-style errors
-4. **No Database**: Simple TOML config file instead of SQLite
+4. **Database**: SQLite for caching version hashes (many experimental builds); TOML for user config
 
 ---
 
@@ -84,7 +84,7 @@ src/
 
 ---
 
-### Spiral 2: Game Detection
+### Spiral 2: Game Detection ✅ COMPLETE
 **Goal:** Detect game version, display detailed info
 
 **Tasks:**
@@ -92,14 +92,16 @@ src/
 - [x] Show save directory size (already implemented)
 - [x] Persist selected directory to config (done in Spiral 1)
 - [x] Load directory from config on startup (done in Spiral 1)
-- [ ] Display version/build info from SHA256 hash lookup
-- [ ] Create version hash database or fetch from API
+- [x] Display version/build info from SHA256 hash lookup
+- [x] Create SQLite database for caching version hashes
 
-**Files to modify:**
-- `src/game.rs` - add version lookup from hash
-- `src/app.rs` - display version info
+**Files modified:**
+- `Cargo.toml` - added rusqlite dependency
+- `src/db.rs` - new database module with schema and version lookup
+- `src/game.rs` - integrated database lookup, added VERSION.txt fallback
+- `src/app.rs` - display version info with stable/experimental indicator
 
-**Rust concepts:** File I/O, hashing, serde serialization
+**Rust concepts:** SQLite with rusqlite, OnceLock for static data, HashMap
 
 ---
 
@@ -208,5 +210,5 @@ src/
 
 ## Current Status
 
-**Completed:** Spiral 1 - Game Launching ✅
-**Next:** Spiral 2 - Game Detection (version lookup from SHA256)
+**Completed:** Spiral 1 - Game Launching ✅, Spiral 2 - Game Detection ✅
+**Next:** Spiral 3 - GitHub Integration (fetch releases, display changelog)

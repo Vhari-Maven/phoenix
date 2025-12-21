@@ -2,6 +2,8 @@ use anyhow::Result;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
+use crate::db::{Database, VersionInfo};
+
 /// Game executable names to look for
 const GAME_EXECUTABLES: &[&str] = &["cataclysm-tiles.exe", "cataclysm.exe"];
 
@@ -17,14 +19,36 @@ pub struct GameInfo {
     pub executable: PathBuf,
     /// SHA256 hash of the executable (for version detection)
     pub sha256: String,
-    /// Detected version (if known)
-    pub version: Option<String>,
+    /// Detected version info
+    pub version_info: Option<VersionInfo>,
     /// Size of save directory in bytes
     pub saves_size: u64,
 }
 
+impl GameInfo {
+    /// Get a display-friendly version string
+    pub fn version_display(&self) -> &str {
+        self.version_info
+            .as_ref()
+            .map(|v| v.version.as_str())
+            .unwrap_or("Unknown")
+    }
+
+    /// Check if this is a stable release
+    pub fn is_stable(&self) -> bool {
+        self.version_info
+            .as_ref()
+            .is_some_and(|v| v.stable)
+    }
+}
+
 /// Detect game installation in the given directory
 pub fn detect_game(directory: &Path) -> Result<Option<GameInfo>> {
+    detect_game_with_db(directory, None)
+}
+
+/// Detect game installation with optional database for version lookup
+pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Option<GameInfo>> {
     // Look for game executable
     let executable = GAME_EXECUTABLES
         .iter()
@@ -38,6 +62,23 @@ pub fn detect_game(directory: &Path) -> Result<Option<GameInfo>> {
     // Calculate SHA256 of executable
     let sha256 = calculate_sha256(&executable)?;
 
+    // Look up version from database
+    let version_info = if let Some(db) = db {
+        match db.get_version(&sha256) {
+            Ok(Some(info)) => Some(info),
+            Ok(None) => {
+                // Try to read VERSION.txt as fallback for experimental builds
+                read_version_txt(directory)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to look up version: {}", e);
+                read_version_txt(directory)
+            }
+        }
+    } else {
+        read_version_txt(directory)
+    };
+
     // Calculate saves size
     let saves_dir = directory.join("save");
     let saves_size = if saves_dir.exists() {
@@ -50,9 +91,37 @@ pub fn detect_game(directory: &Path) -> Result<Option<GameInfo>> {
         directory: directory.to_path_buf(),
         executable,
         sha256,
-        version: None, // TODO: Look up version from hash
+        version_info,
         saves_size,
     }))
+}
+
+/// Read version info from VERSION.txt file (fallback for experimental builds)
+fn read_version_txt(directory: &Path) -> Option<VersionInfo> {
+    let version_file = directory.join("VERSION.txt");
+    if !version_file.exists() {
+        return None;
+    }
+
+    let content = std::fs::read_to_string(&version_file).ok()?;
+
+    // Look for commit SHA in the file
+    // Format: "commit sha: abc1234..."
+    for line in content.lines() {
+        if let Some(sha) = line.strip_prefix("commit sha:") {
+            let sha = sha.trim();
+            if sha.len() >= 7 {
+                return Some(VersionInfo {
+                    version: sha[..7].to_string(),
+                    stable: false,
+                    build_number: None,
+                    released_on: None,
+                });
+            }
+        }
+    }
+
+    None
 }
 
 /// Calculate SHA256 hash of a file

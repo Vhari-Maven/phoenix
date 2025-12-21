@@ -2,12 +2,15 @@ use eframe::egui;
 use std::path::PathBuf;
 
 use crate::config::Config;
+use crate::db::Database;
 use crate::game::{self, GameInfo};
 
 /// Main application state
 pub struct PhoenixApp {
     /// Application configuration
     config: Config,
+    /// Version database
+    db: Option<Database>,
     /// Detected game information
     game_info: Option<GameInfo>,
     /// Status message for the status bar
@@ -20,21 +23,38 @@ impl PhoenixApp {
         // Load configuration
         let config = Config::load().unwrap_or_default();
 
+        // Open database
+        let db = match Database::open() {
+            Ok(db) => {
+                tracing::info!("Database opened successfully");
+                Some(db)
+            }
+            Err(e) => {
+                tracing::error!("Failed to open database: {}", e);
+                None
+            }
+        };
+
         // Try to detect game if directory is configured
         let game_info = config
             .game
             .directory
             .as_ref()
-            .and_then(|dir| game::detect_game(&PathBuf::from(dir)).ok().flatten());
+            .and_then(|dir| {
+                game::detect_game_with_db(&PathBuf::from(dir), db.as_ref())
+                    .ok()
+                    .flatten()
+            });
 
-        let status_message = if game_info.is_some() {
-            "Game detected".to_string()
+        let status_message = if let Some(ref info) = game_info {
+            format!("Game detected: {}", info.version_display())
         } else {
             "Ready".to_string()
         };
 
         Self {
             config,
+            db,
             game_info,
             status_message,
         }
@@ -50,11 +70,12 @@ impl PhoenixApp {
             self.config.game.directory = Some(path_str);
 
             // Try to detect game in selected directory
-            match game::detect_game(&path) {
+            match game::detect_game_with_db(&path, self.db.as_ref()) {
                 Ok(Some(info)) => {
                     self.status_message = format!(
-                        "Game found: {}",
-                        info.executable.file_name().unwrap_or_default().to_string_lossy()
+                        "Game found: {} ({})",
+                        info.executable.file_name().unwrap_or_default().to_string_lossy(),
+                        info.version_display()
                     );
                     self.game_info = Some(info);
                 }
@@ -160,7 +181,12 @@ impl eframe::App for PhoenixApp {
                     });
                     ui.horizontal(|ui| {
                         ui.label("Version:");
-                        ui.label(info.version.as_deref().unwrap_or("Unknown"));
+                        let version_text = if info.is_stable() {
+                            format!("{} (Stable)", info.version_display())
+                        } else {
+                            info.version_display().to_string()
+                        };
+                        ui.label(version_text);
                     });
                     ui.horizontal(|ui| {
                         ui.label("Saves size:");
