@@ -19,11 +19,13 @@ The original Python launcher source (v1.7.12) is in `reference/` (gitignored). U
 
 - **Language:** Rust (2024 edition)
 - **Target:** Windows x64 only
-- **GUI:** egui + eframe
+- **GUI:** egui + eframe + egui_commonmark (markdown)
 - **Async Runtime:** tokio
 - **HTTP:** reqwest
 - **Serialization:** serde, serde_json, toml
+- **Database:** rusqlite (SQLite)
 - **Archives:** zip crate
+- **Images:** image crate (icon loading)
 - **Windows APIs:** windows crate
 
 ## Build & Run
@@ -37,17 +39,23 @@ cargo run
 
 ```
 phoenix/
+├── assets/
+│   ├── icon.svg         # Phoenix flame icon source
+│   └── icon.png         # Embedded window icon
 ├── docs/
 │   ├── PLAN.md          # Development roadmap
 │   └── ANALYSIS.md      # Original launcher analysis
 ├── reference/           # Original Python source (gitignored)
 ├── src/
-│   ├── main.rs          # Entry point, logging setup
-│   ├── app.rs           # Application state and UI
+│   ├── main.rs          # Entry point, logging setup, icon loading
+│   ├── app.rs           # Application state, UI, tab system
 │   ├── config.rs        # Configuration management (TOML)
 │   ├── db.rs            # SQLite database for version caching
-│   ├── github.rs        # GitHub API client
-│   └── game.rs          # Game detection and launching
+│   ├── game.rs          # Game detection and launching
+│   ├── github.rs        # GitHub API client, release fetching
+│   ├── migration.rs     # Smart migration for updates (identity-based content detection)
+│   ├── theme.rs         # Theme system with color presets
+│   └── update.rs        # Download, extract, backup, restore logic
 ├── Cargo.toml
 └── CLAUDE.md
 ```
@@ -59,8 +67,11 @@ See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
 **Completed:**
 - Spiral 1: Game Launching - browse, detect, launch game
 - Spiral 2: Version Detection - SHA256 lookup, SQLite caching, VERSION.txt fallback
+- Spiral 3: GitHub Integration - fetch releases, markdown changelog, rate limiting
+- Spiral 3.5: Theme System - 5 color presets, improved UI layout, custom icon
+- Spiral 4: Download & Update - progress tracking, smart migration for mods/tilesets/soundpacks/fonts
 
-**Next:** Spiral 3 - GitHub Integration (fetch releases, display changelog)
+**Next:** Spiral 5 - Backup System
 
 ## Key External APIs
 
@@ -75,7 +86,7 @@ See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
 
 ```toml
 [launcher]
-dark_theme = true
+theme = "Amber"  # Amber, Purple, Cyan, Green, Catppuccin
 keep_open = false
 
 [game]
@@ -84,6 +95,12 @@ branch = "experimental"
 
 [updates]
 check_on_startup = true
+prevent_save_move = false      # Leave saves in place during updates
+remove_previous_version = false # Auto-delete backup after update
+
+[backups]
+max_count = 10
+compression_level = 6
 ```
 
 ## Code Style

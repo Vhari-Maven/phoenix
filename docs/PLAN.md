@@ -160,7 +160,7 @@ src/
 
 ---
 
-### Spiral 4: Download & Update (IN PROGRESS)
+### Spiral 4: Download & Update ✅ COMPLETE
 **Goal:** Download and install game updates with smart migration
 
 **Phase 1 - Core Download/Update ✅ COMPLETE:**
@@ -174,34 +174,36 @@ src/
 - [x] Update button with precise build number comparison (not just date)
 - [x] Handle new asset naming convention (with-graphics vs tiles)
 
-**Phase 2 - Smart Migration (TODO):**
-- [ ] Smart mod restoration - only restore custom mods, not official ones
+**Phase 2 - Smart Migration ✅ COMPLETE:**
+- [x] Smart mod restoration - only restore custom mods, not official ones
   - Parse `modinfo.json` to get mod ident
   - Compare old vs new `data/mods/` directories
   - Only copy mods not present in new version
-- [ ] Smart tileset restoration - only restore custom tilesets
+- [x] Smart tileset restoration - only restore custom tilesets
   - Parse `tileset.txt` to get tileset name
   - Compare old vs new `gfx/` directories
   - Only copy tilesets not present in new version
-- [ ] Smart soundpack restoration - only restore custom soundpacks
+- [x] Smart soundpack restoration - only restore custom soundpacks
   - Parse soundpack metadata
   - Compare old vs new `data/sound/` directories
-- [ ] Smart font restoration - only restore fonts not in new version
+- [x] Smart font restoration - only restore fonts not in new version
   - Compare `font/` and `data/font/` directories
   - Only copy fonts that don't exist in new version
-- [ ] Add `prevent_save_move` config option (leave saves in place)
-- [ ] Skip debug.log files during config restore
-- [ ] Option to auto-delete `previous_version/` after successful update
+- [x] Add `prevent_save_move` config option (leave saves in place)
+- [x] Skip debug.log files during config restore
+- [x] Option to auto-delete `previous_version/` after successful update
 
 **Files modified:**
-- `src/update.rs` - new module with download, extract, backup, restore logic
+- `src/migration.rs` - new module with identity-based content detection and smart migration
+- `src/update.rs` - download, extract, backup, smart restore logic
 - `src/github.rs` - added `find_windows_asset()`, exposed HTTP client
-- `src/app.rs` - update state, progress polling, Install/Update button logic
+- `src/app.rs` - update state, progress polling, Install/Update button logic, Settings UI
 - `src/game.rs` - store full build number for precise version comparison
-- `src/main.rs` - added update module
+- `src/config.rs` - added `prevent_save_move`, `remove_previous_version` options
+- `src/main.rs` - added update and migration modules
 - `Cargo.toml` - already had required dependencies (zip, futures)
 
-**Rust concepts:** tokio::sync::watch channels, streaming downloads, spawn_blocking for sync ZIP ops, async file I/O
+**Rust concepts:** tokio::sync::watch channels, streaming downloads, spawn_blocking for sync ZIP ops, async file I/O, identity-based set difference for custom content detection
 
 ---
 
@@ -254,6 +256,5 @@ src/
 
 ## Current Status
 
-**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅
-**In Progress:** Spiral 4 - Download & Update (Phase 1 complete, Phase 2 smart migration pending)
-**Next:** Spiral 4 Phase 2 - Smart migration for mods/tilesets/soundpacks/fonts
+**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅, Spiral 4 ✅
+**Next:** Spiral 5 - Backup System

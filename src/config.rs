@@ -93,6 +93,12 @@ pub struct UpdateConfig {
     /// Maximum concurrent downloads
     #[serde(default = "default_max_downloads")]
     pub max_concurrent_downloads: u8,
+    /// Do not move save directory during updates (leave in place)
+    #[serde(default)]
+    pub prevent_save_move: bool,
+    /// Automatically delete previous_version after successful update
+    #[serde(default)]
+    pub remove_previous_version: bool,
 }
 
 impl Default for UpdateConfig {
@@ -100,6 +106,8 @@ impl Default for UpdateConfig {
         Self {
             check_on_startup: true,
             max_concurrent_downloads: 4,
+            prevent_save_move: false,
+            remove_previous_version: false,
         }
     }
 }
@@ -198,6 +206,8 @@ mod tests {
         // Update defaults
         assert!(config.updates.check_on_startup);
         assert_eq!(config.updates.max_concurrent_downloads, 4);
+        assert!(!config.updates.prevent_save_move);
+        assert!(!config.updates.remove_previous_version);
 
         // Backup defaults
         assert_eq!(config.backups.max_count, 10);

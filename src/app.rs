@@ -332,6 +332,8 @@ impl PhoenixApp {
 
         // Clone what we need for the async task
         let client = self.github_client.clone();
+        let prevent_save_move = self.config.updates.prevent_save_move;
+        let remove_previous_version = self.config.updates.remove_previous_version;
 
         self.status_message = format!("Downloading {}...", release.name);
         tracing::info!("Starting update: {} from {}", asset.name, download_url);
@@ -348,11 +350,13 @@ impl PhoenixApp {
 
             tracing::info!("Download complete: {} bytes", result.bytes);
 
-            // Phase 2: Install (backup, extract, restore)
+            // Phase 2: Install (backup, extract, restore with smart migration)
             update::install_update(
                 result.file_path,
                 game_dir,
                 progress_tx,
+                prevent_save_move,
+                remove_previous_version,
             ).await?;
 
             Ok(())
@@ -1034,6 +1038,39 @@ impl PhoenixApp {
                 if ui.checkbox(&mut self.config.updates.check_on_startup, "Check for updates on startup").changed() {
                     self.save_config();
                 }
+            });
+
+        ui.add_space(12.0);
+
+        // Updates section
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(16.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                ui.label(RichText::new("Updates").color(theme.accent).size(13.0).strong());
+                ui.add_space(12.0);
+
+                if ui.checkbox(
+                    &mut self.config.updates.prevent_save_move,
+                    "Do not copy saves during updates"
+                ).changed() {
+                    self.save_config();
+                }
+                ui.label(RichText::new("  Leave saves in place instead of copying from previous_version/")
+                    .color(theme.text_muted).size(11.0));
+
+                ui.add_space(8.0);
+
+                if ui.checkbox(
+                    &mut self.config.updates.remove_previous_version,
+                    "Remove previous_version after update"
+                ).changed() {
+                    self.save_config();
+                }
+                ui.label(RichText::new("  Not recommended - removes rollback capability")
+                    .color(theme.warning).size(11.0));
             });
 
         ui.add_space(12.0);

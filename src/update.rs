@@ -4,6 +4,7 @@
 //! - Downloading release assets from GitHub with progress tracking
 //! - Backing up the current installation
 //! - Extracting new versions while preserving user data
+//! - Smart migration to only restore custom mods/tilesets/soundpacks/fonts
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
@@ -12,15 +13,14 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
 
-/// Directories to preserve during updates (user data)
-const PRESERVE_DIRS: &[&str] = &[
+use crate::migration::{self, MigrationPlan, CONFIG_SKIP_FILES};
+
+/// Directories to always restore completely (no smart filtering)
+const SIMPLE_RESTORE_DIRS: &[&str] = &[
     "save",      // Player saves - CRITICAL
-    "config",    // User settings, keybindings
-    "mods",      // User-installed mods
     "templates", // Character templates
     "memorial",  // Memorial files
     "graveyard", // Graveyard data
-    "font",      // Custom fonts
 ];
 
 /// Current phase of the update process
@@ -208,6 +208,8 @@ pub async fn install_update(
     zip_path: PathBuf,
     game_dir: PathBuf,
     progress_tx: watch::Sender<UpdateProgress>,
+    prevent_save_move: bool,
+    remove_previous_version: bool,
 ) -> Result<()> {
     let previous_version_dir = game_dir.join("previous_version");
 
@@ -233,14 +235,22 @@ pub async fn install_update(
     // Log directory structure after extraction for debugging
     log_directory_structure(&game_dir).await;
 
-    // Phase 3: Restore user data
-    tracing::info!("Restoring user data from previous version");
+    // Phase 3: Smart restore user data
+    tracing::info!("Restoring user data with smart migration");
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::Restoring,
         ..Default::default()
     });
 
-    restore_user_directories(&previous_version_dir, &game_dir).await?;
+    restore_user_directories_smart(&previous_version_dir, &game_dir, prevent_save_move).await?;
+
+    // Phase 4: Optional cleanup of previous_version
+    if remove_previous_version {
+        tracing::info!("Removing previous_version directory");
+        if let Err(e) = tokio::fs::remove_dir_all(&previous_version_dir).await {
+            tracing::warn!("Failed to remove previous_version: {}", e);
+        }
+    }
 
     // Complete
     let _ = progress_tx.send(UpdateProgress {
@@ -381,14 +391,30 @@ async fn extract_zip(
     .context("ZIP extraction task panicked")?
 }
 
-/// Restore user directories from the backup.
-async fn restore_user_directories(previous_dir: &Path, game_dir: &Path) -> Result<()> {
-    for dir_name in PRESERVE_DIRS {
+/// Restore user directories with smart migration.
+///
+/// This performs intelligent restoration:
+/// - Simple dirs (save, templates, memorial, graveyard) are copied completely
+/// - Config is copied with debug.log files filtered out
+/// - Mods, tilesets, soundpacks, fonts use identity-based detection to only restore custom content
+async fn restore_user_directories_smart(
+    previous_dir: &Path,
+    game_dir: &Path,
+    prevent_save_move: bool,
+) -> Result<()> {
+    // Phase 1: Simple directory restoration
+    for dir_name in SIMPLE_RESTORE_DIRS {
+        // Skip save if prevent_save_move is enabled
+        if *dir_name == "save" && prevent_save_move {
+            tracing::info!("Skipping save directory (prevent_save_move enabled)");
+            continue;
+        }
+
         let src = previous_dir.join(dir_name);
         let dst = game_dir.join(dir_name);
 
         if src.exists() {
-            tracing::info!("Restoring user directory: {}", dir_name);
+            tracing::info!("Restoring directory: {}", dir_name);
 
             // Remove any directory that might have been extracted
             if dst.exists() {
@@ -397,8 +423,185 @@ async fn restore_user_directories(previous_dir: &Path, game_dir: &Path) -> Resul
                     .with_context(|| format!("Failed to remove extracted {}", dir_name))?;
             }
 
-            // Copy from backup (we copy instead of move to keep backup intact)
+            // Copy from backup
             copy_dir_recursive(&src, &dst).await?;
+        }
+    }
+
+    // Phase 2: Config directory with file filtering
+    restore_config_directory(previous_dir, game_dir).await?;
+
+    // Phase 3: Smart migration for mods, tilesets, soundpacks, fonts
+    let previous_dir_owned = previous_dir.to_path_buf();
+    let game_dir_owned = game_dir.to_path_buf();
+
+    let plan = tokio::task::spawn_blocking(move || {
+        migration::create_migration_plan(&previous_dir_owned, &game_dir_owned)
+    })
+    .await
+    .context("Migration plan task panicked")?;
+
+    // Execute the migration plan
+    execute_migration_plan(&plan, game_dir, previous_dir).await?;
+
+    Ok(())
+}
+
+/// Restore config directory, skipping debug.log files
+async fn restore_config_directory(previous_dir: &Path, game_dir: &Path) -> Result<()> {
+    let src = previous_dir.join("config");
+    let dst = game_dir.join("config");
+
+    if !src.exists() {
+        return Ok(());
+    }
+
+    tracing::info!("Restoring config directory (filtering debug files)");
+
+    // Remove any config that was extracted
+    if dst.exists() {
+        tokio::fs::remove_dir_all(&dst).await?;
+    }
+
+    // Create destination
+    tokio::fs::create_dir_all(&dst).await?;
+
+    let mut entries = tokio::fs::read_dir(&src).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+
+        // Skip debug files
+        if CONFIG_SKIP_FILES.iter().any(|skip| name_str == *skip) {
+            tracing::debug!("Skipping config file: {}", name_str);
+            continue;
+        }
+
+        let src_path = entry.path();
+        let dst_path = dst.join(&file_name);
+
+        let file_type = entry.file_type().await?;
+        if file_type.is_dir() {
+            Box::pin(copy_dir_recursive(&src_path, &dst_path)).await?;
+        } else {
+            tokio::fs::copy(&src_path, &dst_path).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Execute a migration plan by copying only custom content
+async fn execute_migration_plan(
+    plan: &MigrationPlan,
+    game_dir: &Path,
+    previous_dir: &Path,
+) -> Result<()> {
+    // Restore custom mods to data/mods/
+    let mods_dir = game_dir.join("data").join("mods");
+    for mod_info in &plan.custom_mods {
+        if let Some(dir_name) = mod_info.path.file_name() {
+            let target = mods_dir.join(dir_name);
+            if !target.exists() {
+                tracing::info!(
+                    "Restoring custom mod: {} (id: {})",
+                    dir_name.to_string_lossy(),
+                    mod_info.id
+                );
+                copy_dir_recursive(&mod_info.path, &target).await?;
+            }
+        }
+    }
+
+    // Restore custom user mods to mods/
+    if !plan.custom_user_mods.is_empty() {
+        let user_mods_dir = game_dir.join("mods");
+        tokio::fs::create_dir_all(&user_mods_dir).await?;
+
+        for mod_info in &plan.custom_user_mods {
+            if let Some(dir_name) = mod_info.path.file_name() {
+                let target = user_mods_dir.join(dir_name);
+                if !target.exists() {
+                    tracing::info!("Restoring custom user mod: {}", mod_info.id);
+                    copy_dir_recursive(&mod_info.path, &target).await?;
+                }
+            }
+        }
+    }
+
+    // Restore custom tilesets to gfx/
+    let gfx_dir = game_dir.join("gfx");
+    for tileset_info in &plan.custom_tilesets {
+        if let Some(dir_name) = tileset_info.path.file_name() {
+            let target = gfx_dir.join(dir_name);
+            if !target.exists() {
+                tracing::info!("Restoring custom tileset: {}", tileset_info.name);
+                copy_dir_recursive(&tileset_info.path, &target).await?;
+            }
+        }
+    }
+
+    // Restore custom soundpacks to data/sound/
+    let sound_dir = game_dir.join("data").join("sound");
+    for soundpack_info in &plan.custom_soundpacks {
+        if let Some(dir_name) = soundpack_info.path.file_name() {
+            let target = sound_dir.join(dir_name);
+            if !target.exists() {
+                tracing::info!("Restoring custom soundpack: {}", soundpack_info.name);
+                copy_dir_recursive(&soundpack_info.path, &target).await?;
+            }
+        }
+    }
+
+    // Restore custom fonts
+    if !plan.custom_fonts.is_empty() {
+        let font_dir = game_dir.join("font");
+        tokio::fs::create_dir_all(&font_dir).await?;
+
+        for font_path in &plan.custom_fonts {
+            if let Some(file_name) = font_path.file_name() {
+                let target = font_dir.join(file_name);
+                if font_path.is_file() {
+                    tracing::info!("Restoring custom font: {}", file_name.to_string_lossy());
+                    tokio::fs::copy(font_path, &target).await?;
+                } else if font_path.is_dir() {
+                    copy_dir_recursive(font_path, &target).await?;
+                }
+            }
+        }
+    }
+
+    // Restore custom data fonts
+    if !plan.custom_data_fonts.is_empty() {
+        let data_font_dir = game_dir.join("data").join("font");
+        tokio::fs::create_dir_all(&data_font_dir).await?;
+
+        for font_path in &plan.custom_data_fonts {
+            if let Some(file_name) = font_path.file_name() {
+                let target = data_font_dir.join(file_name);
+                if font_path.is_file() {
+                    tokio::fs::copy(font_path, &target).await?;
+                } else if font_path.is_dir() {
+                    copy_dir_recursive(font_path, &target).await?;
+                }
+            }
+        }
+    }
+
+    // Restore user-default-mods.json if needed
+    if plan.restore_user_default_mods {
+        let src = previous_dir
+            .join("data")
+            .join("mods")
+            .join("user-default-mods.json");
+        let dst = game_dir
+            .join("data")
+            .join("mods")
+            .join("user-default-mods.json");
+        if src.exists() && !dst.exists() {
+            tracing::info!("Restoring user-default-mods.json");
+            tokio::fs::copy(&src, &dst).await?;
         }
     }
 
@@ -543,11 +746,11 @@ mod tests {
     }
 
     #[test]
-    fn test_preserve_dirs_contains_critical_directories() {
-        // Ensure save directory is always preserved
-        assert!(PRESERVE_DIRS.contains(&"save"), "save directory must be preserved");
-        assert!(PRESERVE_DIRS.contains(&"config"), "config directory must be preserved");
-        assert!(PRESERVE_DIRS.contains(&"mods"), "mods directory must be preserved");
+    fn test_simple_restore_dirs_contains_critical_directories() {
+        // Ensure save directory is always in simple restore
+        assert!(SIMPLE_RESTORE_DIRS.contains(&"save"), "save directory must be preserved");
+        // Config is handled separately with filtering, not in SIMPLE_RESTORE_DIRS
+        // Mods are handled via smart migration, not simple restore
     }
 
     #[test]
@@ -576,15 +779,20 @@ mod tests {
         fs::create_dir_all(&save_dir).unwrap();
         fs::write(save_dir.join("test_world.sav"), b"save data").unwrap();
 
-        // Create config directory
+        // Create config directory with options and debug.log
         let config_dir = game_dir.join("config");
         fs::create_dir_all(&config_dir).unwrap();
         fs::write(config_dir.join("options.json"), b"{}").unwrap();
+        fs::write(config_dir.join("debug.log"), b"debug output").unwrap();
 
-        // Create mods directory
-        let mods_dir = game_dir.join("mods");
-        fs::create_dir_all(&mods_dir).unwrap();
-        fs::write(mods_dir.join("my_mod.json"), b"mod data").unwrap();
+        // Create a custom mod with proper modinfo.json
+        let custom_mod_dir = game_dir.join("data").join("mods").join("my_custom_mod");
+        fs::create_dir_all(&custom_mod_dir).unwrap();
+        fs::write(
+            custom_mod_dir.join("modinfo.json"),
+            r#"{"type": "MOD_INFO", "id": "my_custom_mod", "name": "My Custom Mod"}"#,
+        )
+        .unwrap();
 
         // Backup the installation
         let backup_dir = game_dir.join("previous_version");
@@ -594,31 +802,62 @@ mod tests {
         assert!(backup_dir.join("cataclysm-tiles.exe").exists());
         assert!(backup_dir.join("save").join("test_world.sav").exists());
         assert!(backup_dir.join("config").join("options.json").exists());
-        assert!(backup_dir.join("mods").join("my_mod.json").exists());
+        assert!(backup_dir.join("config").join("debug.log").exists());
+        assert!(backup_dir.join("data").join("mods").join("my_custom_mod").join("modinfo.json").exists());
 
         // Verify original files are moved (not copied)
         assert!(!game_dir.join("cataclysm-tiles.exe").exists());
         assert!(!game_dir.join("save").exists());
 
-        // Simulate extracting a new version (just create the exe)
+        // Simulate extracting a new version with official mod
         fs::write(game_dir.join("cataclysm-tiles.exe"), b"new exe").unwrap();
+        let official_mod_dir = game_dir.join("data").join("mods").join("official_mod");
+        fs::create_dir_all(&official_mod_dir).unwrap();
+        fs::write(
+            official_mod_dir.join("modinfo.json"),
+            r#"{"type": "MOD_INFO", "id": "official_mod", "name": "Official"}"#,
+        )
+        .unwrap();
 
-        // Restore user directories
-        restore_user_directories(&backup_dir, &game_dir).await.unwrap();
+        // Restore user directories with smart migration
+        restore_user_directories_smart(&backup_dir, &game_dir, false).await.unwrap();
 
         // Verify saves are restored
         assert!(game_dir.join("save").join("test_world.sav").exists());
         let save_content = fs::read_to_string(game_dir.join("save").join("test_world.sav")).unwrap();
         assert_eq!(save_content, "save data");
 
-        // Verify config is restored
+        // Verify config is restored (options.json should exist)
         assert!(game_dir.join("config").join("options.json").exists());
+        // Verify debug.log is NOT restored (filtered out)
+        assert!(!game_dir.join("config").join("debug.log").exists());
 
-        // Verify mods are restored
-        assert!(game_dir.join("mods").join("my_mod.json").exists());
+        // Verify custom mod is restored
+        assert!(game_dir.join("data").join("mods").join("my_custom_mod").join("modinfo.json").exists());
 
         // Verify backup still exists (for rollback)
         assert!(backup_dir.join("save").join("test_world.sav").exists());
+    }
+
+    #[tokio::test]
+    async fn test_restore_with_prevent_save_move() {
+        let temp_dir = TempDir::new().unwrap();
+        let previous_dir = temp_dir.path().join("previous_version");
+        let game_dir = temp_dir.path().join("game");
+
+        // Create save in previous version
+        let save_dir = previous_dir.join("save");
+        fs::create_dir_all(&save_dir).unwrap();
+        fs::write(save_dir.join("world.sav"), b"save data").unwrap();
+
+        // Create game dir
+        fs::create_dir_all(&game_dir).unwrap();
+
+        // Restore with prevent_save_move = true
+        restore_user_directories_smart(&previous_dir, &game_dir, true).await.unwrap();
+
+        // Save should NOT be restored when prevent_save_move is true
+        assert!(!game_dir.join("save").exists());
     }
 
     #[tokio::test]

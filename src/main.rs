@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod game;
 mod github;
+mod migration;
 mod theme;
 mod update;
 
