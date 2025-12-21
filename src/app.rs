@@ -1,11 +1,17 @@
 use eframe::egui;
+use std::path::PathBuf;
 
 use crate::config::Config;
+use crate::game::{self, GameInfo};
 
 /// Main application state
 pub struct PhoenixApp {
     /// Application configuration
     config: Config,
+    /// Detected game information
+    game_info: Option<GameInfo>,
+    /// Status message for the status bar
+    status_message: String,
 }
 
 impl PhoenixApp {
@@ -14,7 +20,80 @@ impl PhoenixApp {
         // Load configuration
         let config = Config::load().unwrap_or_default();
 
-        Self { config }
+        // Try to detect game if directory is configured
+        let game_info = config
+            .game
+            .directory
+            .as_ref()
+            .and_then(|dir| game::detect_game(&PathBuf::from(dir)).ok().flatten());
+
+        let status_message = if game_info.is_some() {
+            "Game detected".to_string()
+        } else {
+            "Ready".to_string()
+        };
+
+        Self {
+            config,
+            game_info,
+            status_message,
+        }
+    }
+
+    /// Open directory picker and update game directory
+    fn browse_for_directory(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("Select CDDA Game Directory")
+            .pick_folder()
+        {
+            let path_str = path.to_string_lossy().to_string();
+            self.config.game.directory = Some(path_str);
+
+            // Try to detect game in selected directory
+            match game::detect_game(&path) {
+                Ok(Some(info)) => {
+                    self.status_message = format!(
+                        "Game found: {}",
+                        info.executable.file_name().unwrap_or_default().to_string_lossy()
+                    );
+                    self.game_info = Some(info);
+                }
+                Ok(None) => {
+                    self.status_message = "No game executable found in directory".to_string();
+                    self.game_info = None;
+                }
+                Err(e) => {
+                    self.status_message = format!("Error detecting game: {}", e);
+                    self.game_info = None;
+                }
+            }
+
+            // Save config after directory change
+            self.save_config();
+        }
+    }
+
+    /// Save configuration to disk
+    fn save_config(&self) {
+        if let Err(e) = self.config.save() {
+            tracing::error!("Failed to save config: {}", e);
+        }
+    }
+
+    /// Launch the game
+    fn launch_game(&mut self) {
+        if let Some(ref info) = self.game_info {
+            match game::launch_game(&info.executable, &self.config.game.command_params) {
+                Ok(()) => {
+                    self.status_message = "Game launched!".to_string();
+                }
+                Err(e) => {
+                    self.status_message = format!("Failed to launch: {}", e);
+                }
+            }
+        } else {
+            self.status_message = "No game detected - select a valid game directory".to_string();
+        }
     }
 }
 
@@ -39,24 +118,25 @@ impl eframe::App for PhoenixApp {
         // Status bar at bottom
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Ready");
+                ui.label(&self.status_message);
             });
         });
 
         // Main content area with tabs
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_label(true, "Main");
-                ui.selectable_label(false, "Backups");
-                ui.selectable_label(false, "Soundpacks");
-                ui.selectable_label(false, "Settings");
+                let _ = ui.selectable_label(true, "Main");
+                let _ = ui.selectable_label(false, "Backups");
+                let _ = ui.selectable_label(false, "Soundpacks");
+                let _ = ui.selectable_label(false, "Settings");
             });
 
             ui.separator();
 
-            // Main tab content placeholder
+            // Main tab content
             ui.vertical(|ui| {
                 ui.heading("Game Directory");
+
                 ui.horizontal(|ui| {
                     ui.label("Directory:");
                     let dir_text = self
@@ -67,9 +147,26 @@ impl eframe::App for PhoenixApp {
                         .unwrap_or("Not selected");
                     ui.label(dir_text);
                     if ui.button("Browse...").clicked() {
-                        // TODO: Open directory picker
+                        self.browse_for_directory();
                     }
                 });
+
+                // Show game info if detected
+                if let Some(ref info) = self.game_info {
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.label("Executable:");
+                        ui.label(info.executable.file_name().unwrap_or_default().to_string_lossy().to_string());
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Version:");
+                        ui.label(info.version.as_deref().unwrap_or("Unknown"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Saves size:");
+                        ui.label(game::format_size(info.saves_size));
+                    });
+                }
 
                 ui.add_space(20.0);
 
@@ -95,8 +192,9 @@ impl eframe::App for PhoenixApp {
                 ui.add_space(20.0);
 
                 ui.horizontal(|ui| {
-                    if ui.button("Launch Game").clicked() {
-                        // TODO: Launch game
+                    let can_launch = self.game_info.is_some();
+                    if ui.add_enabled(can_launch, egui::Button::new("Launch Game")).clicked() {
+                        self.launch_game();
                     }
                     if ui.button("Update").clicked() {
                         // TODO: Check for updates
