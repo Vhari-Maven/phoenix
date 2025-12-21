@@ -2,11 +2,12 @@ use anyhow::Result;
 use eframe::egui::{self, Color32, RichText, Rounding, Vec2};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use futures::FutureExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use crate::backup::{self, AutoBackupType, BackupInfo, BackupPhase, BackupProgress};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game::{self, GameInfo};
@@ -68,6 +69,30 @@ pub struct PhoenixApp {
     update_progress: UpdateProgress,
     /// Error message from last update attempt
     update_error: Option<String>,
+
+    // Backup state
+    /// List of available backups
+    backup_list: Vec<BackupInfo>,
+    /// Whether backup list is being loaded
+    backup_list_loading: bool,
+    /// Index of selected backup in list
+    backup_selected_idx: Option<usize>,
+    /// Input field for manual backup name
+    backup_name_input: String,
+    /// Async task for backup operation
+    backup_task: Option<JoinHandle<Result<(), backup::BackupError>>>,
+    /// Async task for loading backup list
+    backup_list_task: Option<JoinHandle<Result<Vec<BackupInfo>, backup::BackupError>>>,
+    /// Channel receiver for backup progress
+    backup_progress_rx: Option<watch::Receiver<BackupProgress>>,
+    /// Current backup progress
+    backup_progress: BackupProgress,
+    /// Error message from last backup attempt
+    backup_error: Option<String>,
+    /// Whether to show delete confirmation
+    backup_confirm_delete: bool,
+    /// Whether to show restore confirmation
+    backup_confirm_restore: bool,
 }
 
 /// Application tabs
@@ -152,6 +177,17 @@ impl PhoenixApp {
             update_progress_rx: None,
             update_progress: UpdateProgress::default(),
             update_error: None,
+            backup_list: Vec::new(),
+            backup_list_loading: false,
+            backup_selected_idx: None,
+            backup_name_input: String::new(),
+            backup_task: None,
+            backup_list_task: None,
+            backup_progress_rx: None,
+            backup_progress: BackupProgress::default(),
+            backup_error: None,
+            backup_confirm_delete: false,
+            backup_confirm_restore: false,
         };
 
         // Auto-fetch releases for current branch on startup
@@ -344,12 +380,41 @@ impl PhoenixApp {
         let client = self.github_client.clone();
         let prevent_save_move = self.config.updates.prevent_save_move;
         let remove_previous_version = self.config.updates.remove_previous_version;
+        let backup_before_update = self.config.backups.backup_before_update;
+        let compression_level = self.config.backups.compression_level;
+        let max_backups = self.config.backups.max_count;
+        let version_tag = release.tag_name.clone();
 
         self.status_message = format!("Downloading {}...", release.name);
         tracing::info!("Starting update: {} from {}", asset.name, download_url);
 
         // Spawn the update task
         self.update_task = Some(tokio::spawn(async move {
+            // Phase 0: Auto-backup before update (if enabled)
+            if backup_before_update {
+                tracing::info!("Creating pre-update backup...");
+                let backup_progress_tx = watch::channel(BackupProgress::default()).0;
+                match backup::create_auto_backup(
+                    &game_dir,
+                    AutoBackupType::BeforeUpdate,
+                    Some(&version_tag),
+                    compression_level,
+                    max_backups,
+                    backup_progress_tx,
+                ).await {
+                    Ok(Some(info)) => {
+                        tracing::info!("Pre-update backup created: {}", info.name);
+                    }
+                    Ok(None) => {
+                        tracing::info!("No saves to backup before update");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create pre-update backup: {} (continuing with update)", e);
+                        // Continue with update even if backup fails
+                    }
+                }
+            }
+
             // Phase 1: Download
             let result = update::download_asset(
                 client.client().clone(),
@@ -518,6 +583,7 @@ impl eframe::App for PhoenixApp {
         // Poll async tasks
         self.poll_releases_task(ctx);
         self.poll_update_task(ctx);
+        self.poll_backup_task(ctx);
 
         let theme = &self.current_theme;
 
@@ -597,7 +663,17 @@ impl PhoenixApp {
             .min_size(Vec2::new(80.0, 32.0));
 
         if ui.add(button).clicked() {
+            let previous_tab = self.active_tab;
             self.active_tab = tab;
+
+            // Load backup list when switching to Backups tab
+            if tab == Tab::Backups && previous_tab != Tab::Backups {
+                if let Some(ref dir) = self.config.game.directory {
+                    if self.backup_list.is_empty() && !self.backup_list_loading {
+                        self.refresh_backup_list(&PathBuf::from(dir));
+                    }
+                }
+            }
         }
     }
 
@@ -949,10 +1025,485 @@ impl PhoenixApp {
 
     /// Render the backups tab
     fn render_backups_tab(&mut self, ui: &mut egui::Ui) {
-        let theme = &self.current_theme;
+        let theme = self.current_theme.clone();
+
         ui.label(RichText::new("Backups").color(theme.text_primary).size(20.0).strong());
-        ui.add_space(8.0);
-        ui.label(RichText::new("Backup management coming in a future update.").color(theme.text_muted));
+        ui.add_space(16.0);
+
+        // Check if game directory is set
+        let game_dir = self.config.game.directory.as_ref().map(PathBuf::from);
+
+        if game_dir.is_none() {
+            ui.label(RichText::new("Set a game directory in Main tab to manage backups.").color(theme.text_muted));
+            return;
+        }
+
+        let game_dir = game_dir.unwrap();
+        let is_busy = self.is_backup_busy();
+
+        // Manual backup section
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(16.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new("Create Backup").color(theme.accent).size(13.0).strong());
+                ui.add_space(12.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Backup name:").color(theme.text_muted));
+                    ui.add_sized(
+                        [200.0, 20.0],
+                        egui::TextEdit::singleline(&mut self.backup_name_input)
+                            .hint_text("my_backup")
+                    );
+
+                    ui.add_space(16.0);
+
+                    let can_backup = !is_busy && !self.backup_name_input.trim().is_empty();
+                    if ui.add_enabled(can_backup, egui::Button::new("Backup Current Saves")).clicked() {
+                        self.start_manual_backup(&game_dir);
+                    }
+                });
+
+                // Show validation error
+                if !self.backup_name_input.is_empty() {
+                    if let Err(e) = self.validate_backup_name(&self.backup_name_input) {
+                        ui.add_space(4.0);
+                        ui.label(RichText::new(e).color(theme.error).size(11.0));
+                    }
+                }
+            });
+
+        ui.add_space(12.0);
+
+        // Backup list section
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(16.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Available Backups").color(theme.accent).size(13.0).strong());
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add_enabled(!is_busy, egui::Button::new("Refresh")).clicked() {
+                            self.refresh_backup_list(&game_dir);
+                        }
+                    });
+                });
+                ui.add_space(12.0);
+
+                if self.backup_list_loading {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(RichText::new("Loading backups...").color(theme.text_muted));
+                    });
+                } else if self.backup_list.is_empty() {
+                    ui.label(RichText::new("No backups found.").color(theme.text_muted));
+                } else {
+                    // Backup table
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            egui::Grid::new("backup_list_grid")
+                                .num_columns(7)
+                                .spacing([12.0, 8.0])
+                                .striped(true)
+                                .show(ui, |ui| {
+                                    // Header row
+                                    ui.label(RichText::new("Name").color(theme.text_muted).strong().size(11.0));
+                                    ui.label(RichText::new("Date").color(theme.text_muted).strong().size(11.0));
+                                    ui.label(RichText::new("Worlds").color(theme.text_muted).strong().size(11.0));
+                                    ui.label(RichText::new("Chars").color(theme.text_muted).strong().size(11.0));
+                                    ui.label(RichText::new("Size").color(theme.text_muted).strong().size(11.0));
+                                    ui.label(RichText::new("Uncomp.").color(theme.text_muted).strong().size(11.0));
+                                    ui.label(RichText::new("Ratio").color(theme.text_muted).strong().size(11.0));
+                                    ui.end_row();
+
+                                    // Data rows
+                                    for (i, backup) in self.backup_list.iter().enumerate() {
+                                        let is_selected = self.backup_selected_idx == Some(i);
+                                        let text_color = if is_selected { theme.accent } else { theme.text_primary };
+
+                                        // Truncate long names
+                                        let display_name = if backup.name.len() > 25 {
+                                            format!("{}...", &backup.name[..22])
+                                        } else {
+                                            backup.name.clone()
+                                        };
+
+                                        if ui.selectable_label(is_selected, RichText::new(&display_name).color(text_color).size(12.0)).clicked() {
+                                            self.backup_selected_idx = Some(i);
+                                        }
+
+                                        ui.label(RichText::new(backup.modified.format("%Y-%m-%d %H:%M").to_string()).color(text_color).size(12.0));
+                                        ui.label(RichText::new(backup.worlds_count.to_string()).color(text_color).size(12.0));
+                                        ui.label(RichText::new(backup.characters_count.to_string()).color(text_color).size(12.0));
+                                        ui.label(RichText::new(backup.compressed_size_display()).color(text_color).size(12.0));
+                                        ui.label(RichText::new(backup.uncompressed_size_display()).color(text_color).size(12.0));
+                                        ui.label(RichText::new(format!("{:.0}%", backup.compression_ratio())).color(text_color).size(12.0));
+                                        ui.end_row();
+                                    }
+                                });
+                        });
+
+                    ui.add_space(12.0);
+
+                    // Action buttons
+                    ui.horizontal(|ui| {
+                        let has_selection = self.backup_selected_idx.is_some();
+
+                        // Restore button
+                        if ui.add_enabled(has_selection && !is_busy, egui::Button::new("Restore")).clicked() {
+                            self.backup_confirm_restore = true;
+                        }
+
+                        // Delete button
+                        if ui.add_enabled(has_selection && !is_busy, egui::Button::new("Delete")).clicked() {
+                            self.backup_confirm_delete = true;
+                        }
+                    });
+                }
+            });
+
+        // Confirmation dialogs
+        self.render_backup_confirm_dialogs(ui, &theme, &game_dir);
+
+        // Progress section
+        if is_busy || self.backup_progress.phase == BackupPhase::Complete || self.backup_progress.phase == BackupPhase::Failed {
+            ui.add_space(12.0);
+            self.render_backup_progress(ui, &theme);
+        }
+
+        // Error display
+        if let Some(ref err) = self.backup_error {
+            ui.add_space(8.0);
+            ui.label(RichText::new(format!("Error: {}", err)).color(theme.error));
+        }
+    }
+
+    /// Render backup confirmation dialogs
+    fn render_backup_confirm_dialogs(&mut self, ui: &mut egui::Ui, theme: &Theme, game_dir: &Path) {
+        // Delete confirmation
+        if self.backup_confirm_delete {
+            egui::Window::new("Confirm Delete")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ui.ctx(), |ui| {
+                    if let Some(idx) = self.backup_selected_idx {
+                        if let Some(backup) = self.backup_list.get(idx) {
+                            ui.label(format!("Delete backup \"{}\"?", backup.name));
+                            ui.add_space(8.0);
+                            ui.label(RichText::new("This cannot be undone.").color(theme.warning));
+                            ui.add_space(12.0);
+
+                            ui.horizontal(|ui| {
+                                if ui.button("Cancel").clicked() {
+                                    self.backup_confirm_delete = false;
+                                }
+                                if ui.button("Delete").clicked() {
+                                    self.delete_selected_backup(game_dir);
+                                    self.backup_confirm_delete = false;
+                                }
+                            });
+                        }
+                    } else {
+                        self.backup_confirm_delete = false;
+                    }
+                });
+        }
+
+        // Restore confirmation
+        if self.backup_confirm_restore {
+            egui::Window::new("Confirm Restore")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ui.ctx(), |ui| {
+                    if let Some(idx) = self.backup_selected_idx {
+                        if let Some(backup) = self.backup_list.get(idx) {
+                            ui.label(format!("Restore backup \"{}\"?", backup.name));
+                            ui.add_space(8.0);
+
+                            if !self.config.backups.skip_backup_before_restore {
+                                ui.label(RichText::new("Your current saves will be backed up first.").color(theme.text_muted));
+                            } else {
+                                ui.label(RichText::new("Warning: Current saves will be replaced!").color(theme.warning));
+                            }
+                            ui.add_space(12.0);
+
+                            ui.horizontal(|ui| {
+                                if ui.button("Cancel").clicked() {
+                                    self.backup_confirm_restore = false;
+                                }
+                                if ui.button("Restore").clicked() {
+                                    self.restore_selected_backup(game_dir);
+                                    self.backup_confirm_restore = false;
+                                }
+                            });
+                        }
+                    } else {
+                        self.backup_confirm_restore = false;
+                    }
+                });
+        }
+    }
+
+    /// Render backup progress
+    fn render_backup_progress(&self, ui: &mut egui::Ui, theme: &Theme) {
+        let progress = &self.backup_progress;
+
+        egui::Frame::none()
+            .fill(theme.bg_light.gamma_multiply(0.5))
+            .rounding(6.0)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+
+                // Phase label
+                let (phase_text, phase_color) = match progress.phase {
+                    BackupPhase::Scanning => ("Scanning files...", theme.accent),
+                    BackupPhase::Compressing => ("Compressing saves...", theme.accent),
+                    BackupPhase::Extracting => ("Extracting backup...", theme.accent),
+                    BackupPhase::Cleaning => ("Cleaning up...", theme.warning),
+                    BackupPhase::Complete => ("Backup operation complete!", theme.success),
+                    BackupPhase::Failed => ("Operation failed", theme.error),
+                    BackupPhase::Idle => ("Ready", theme.text_muted),
+                };
+
+                ui.label(RichText::new(phase_text).color(phase_color).size(13.0).strong());
+                ui.add_space(8.0);
+
+                // Progress bar for compress/extract phases
+                match progress.phase {
+                    BackupPhase::Compressing | BackupPhase::Extracting => {
+                        let fraction = progress.fraction();
+                        ui.add(egui::ProgressBar::new(fraction).show_percentage());
+
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(format!(
+                                "{} / {} files",
+                                progress.files_processed,
+                                progress.total_files
+                            ))
+                            .color(theme.text_muted)
+                            .size(11.0)
+                        );
+
+                        if !progress.current_file.is_empty() {
+                            ui.label(
+                                RichText::new(&progress.current_file)
+                                    .color(theme.text_muted)
+                                    .size(10.0)
+                            );
+                        }
+                    }
+                    BackupPhase::Scanning | BackupPhase::Cleaning => {
+                        ui.add(egui::ProgressBar::new(0.0).animate(true));
+                    }
+                    _ => {}
+                }
+            });
+    }
+
+    /// Check if a backup operation is in progress
+    fn is_backup_busy(&self) -> bool {
+        self.backup_task.is_some() || self.backup_list_loading
+    }
+
+    /// Validate a backup name
+    fn validate_backup_name(&self, name: &str) -> Result<(), String> {
+        if name.is_empty() {
+            return Err("Name cannot be empty".to_string());
+        }
+        if name.len() > 100 {
+            return Err("Name too long (max 100 chars)".to_string());
+        }
+        for c in name.chars() {
+            if !c.is_alphanumeric() && c != '_' && c != '-' && c != ' ' {
+                return Err(format!("Invalid character: '{}'", c));
+            }
+        }
+        // Check if already exists
+        if self.backup_list.iter().any(|b| b.name == name) {
+            return Err("A backup with this name already exists".to_string());
+        }
+        Ok(())
+    }
+
+    /// Start a manual backup
+    fn start_manual_backup(&mut self, game_dir: &Path) {
+        let name = self.backup_name_input.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+
+        // Clear previous state
+        self.backup_error = None;
+        self.backup_progress = BackupProgress::default();
+
+        let (progress_tx, progress_rx) = watch::channel(BackupProgress::default());
+        self.backup_progress_rx = Some(progress_rx);
+
+        let game_dir = game_dir.to_path_buf();
+        let compression_level = self.config.backups.compression_level;
+
+        self.status_message = format!("Creating backup: {}", name);
+        tracing::info!("Starting manual backup: {}", name);
+
+        self.backup_task = Some(tokio::spawn(async move {
+            backup::create_backup(&game_dir, &name, compression_level, progress_tx).await?;
+            Ok(())
+        }));
+
+        // Clear input on success start
+        self.backup_name_input.clear();
+    }
+
+    /// Refresh the backup list
+    fn refresh_backup_list(&mut self, game_dir: &Path) {
+        if self.backup_list_loading || self.backup_list_task.is_some() {
+            return;
+        }
+
+        self.backup_list_loading = true;
+        self.backup_selected_idx = None;
+        self.backup_error = None;
+
+        let game_dir = game_dir.to_path_buf();
+
+        self.backup_list_task = Some(tokio::spawn(async move {
+            backup::list_backups(&game_dir).await
+        }));
+    }
+
+    /// Delete the selected backup
+    fn delete_selected_backup(&mut self, game_dir: &Path) {
+        let Some(idx) = self.backup_selected_idx else { return };
+        let Some(backup) = self.backup_list.get(idx) else { return };
+
+        let backup_name = backup.name.clone();
+        let game_dir = game_dir.to_path_buf();
+
+        self.backup_error = None;
+        self.status_message = format!("Deleting backup: {}", backup_name);
+        tracing::info!("Deleting backup: {}", backup_name);
+
+        self.backup_task = Some(tokio::spawn(async move {
+            backup::delete_backup(&game_dir, &backup_name).await
+        }));
+
+        self.backup_selected_idx = None;
+    }
+
+    /// Restore the selected backup
+    fn restore_selected_backup(&mut self, game_dir: &Path) {
+        let Some(idx) = self.backup_selected_idx else { return };
+        let Some(backup) = self.backup_list.get(idx) else { return };
+
+        let backup_name = backup.name.clone();
+        let game_dir = game_dir.to_path_buf();
+        let backup_first = !self.config.backups.skip_backup_before_restore;
+        let compression_level = self.config.backups.compression_level;
+
+        self.backup_error = None;
+        self.backup_progress = BackupProgress::default();
+
+        let (progress_tx, progress_rx) = watch::channel(BackupProgress::default());
+        self.backup_progress_rx = Some(progress_rx);
+
+        self.status_message = format!("Restoring backup: {}", backup_name);
+        tracing::info!("Restoring backup: {}", backup_name);
+
+        self.backup_task = Some(tokio::spawn(async move {
+            backup::restore_backup(&game_dir, &backup_name, backup_first, compression_level, progress_tx).await
+        }));
+    }
+
+    /// Poll the backup task for progress and completion
+    fn poll_backup_task(&mut self, ctx: &egui::Context) {
+        // Update progress from channel
+        if let Some(rx) = &mut self.backup_progress_rx {
+            if rx.has_changed().unwrap_or(false) {
+                self.backup_progress = rx.borrow_and_update().clone();
+                self.status_message = self.backup_progress.phase.description().to_string();
+            }
+        }
+
+        // Check if backup operation task is complete
+        if let Some(task) = &mut self.backup_task {
+            if task.is_finished() {
+                let task = self.backup_task.take().unwrap();
+                self.backup_progress_rx = None;
+
+                match task.now_or_never() {
+                    Some(Ok(Ok(()))) => {
+                        self.backup_progress.phase = BackupPhase::Complete;
+                        self.status_message = "Backup operation complete!".to_string();
+                        tracing::info!("Backup operation completed successfully");
+
+                        // Trigger backup list refresh
+                        if let Some(ref dir) = self.config.game.directory {
+                            self.refresh_backup_list(&PathBuf::from(dir));
+                        }
+                    }
+                    Some(Ok(Err(e))) => {
+                        self.backup_progress.phase = BackupPhase::Failed;
+                        let msg = e.to_string();
+                        tracing::error!("Backup operation failed: {}", msg);
+                        self.backup_error = Some(msg.clone());
+                        self.status_message = format!("Backup failed: {}", msg);
+                    }
+                    Some(Err(e)) => {
+                        self.backup_progress.phase = BackupPhase::Failed;
+                        let msg = format!("Backup task panicked: {}", e);
+                        tracing::error!("{}", msg);
+                        self.backup_error = Some(msg.clone());
+                        self.status_message = msg;
+                    }
+                    None => {
+                        tracing::warn!("Backup task not ready despite is_finished()");
+                    }
+                }
+            } else {
+                ctx.request_repaint();
+            }
+        }
+
+        // Check if backup list loading task is complete
+        if let Some(task) = &mut self.backup_list_task {
+            if task.is_finished() {
+                let task = self.backup_list_task.take().unwrap();
+                self.backup_list_loading = false;
+
+                match task.now_or_never() {
+                    Some(Ok(Ok(list))) => {
+                        self.backup_list = list;
+                        tracing::info!("Loaded {} backups", self.backup_list.len());
+                    }
+                    Some(Ok(Err(e))) => {
+                        tracing::error!("Failed to load backup list: {}", e);
+                        self.backup_error = Some(format!("Failed to load backups: {}", e));
+                    }
+                    Some(Err(e)) => {
+                        tracing::error!("Backup list task panicked: {}", e);
+                    }
+                    None => {
+                        tracing::warn!("Backup list task not ready despite is_finished()");
+                    }
+                }
+            } else {
+                ctx.request_repaint();
+            }
+        }
     }
 
     /// Render the soundpacks tab
@@ -1081,6 +1632,74 @@ impl PhoenixApp {
                 }
                 ui.label(RichText::new("  Not recommended - removes rollback capability")
                     .color(theme.warning).size(11.0));
+            });
+
+        ui.add_space(12.0);
+
+        // Backups section
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(16.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                ui.label(RichText::new("Backups").color(theme.accent).size(13.0).strong());
+                ui.add_space(12.0);
+
+                // Auto-backup toggles
+                if ui.checkbox(
+                    &mut self.config.backups.backup_before_update,
+                    "Backup saves before updating game"
+                ).changed() {
+                    self.save_config();
+                }
+                ui.label(RichText::new("  Creates an automatic backup before each update")
+                    .color(theme.text_muted).size(11.0));
+
+                ui.add_space(8.0);
+
+                if ui.checkbox(
+                    &mut self.config.backups.backup_on_launch,
+                    "Backup saves before launching game"
+                ).changed() {
+                    self.save_config();
+                }
+
+                ui.add_space(8.0);
+
+                if ui.checkbox(
+                    &mut self.config.backups.skip_backup_before_restore,
+                    "Skip backup when restoring"
+                ).changed() {
+                    self.save_config();
+                }
+                ui.label(RichText::new("  Not recommended - restoring will overwrite current saves")
+                    .color(theme.warning).size(11.0));
+
+                ui.add_space(12.0);
+
+                // Max backups
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Max auto-backups to keep:").color(theme.text_muted));
+                    if ui.add(egui::DragValue::new(&mut self.config.backups.max_count)
+                        .range(1..=100)
+                        .speed(1.0)).changed() {
+                        self.save_config();
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                // Compression level
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Compression level:").color(theme.text_muted));
+                    if ui.add(egui::Slider::new(&mut self.config.backups.compression_level, 0..=9)
+                        .text("")).changed() {
+                        self.save_config();
+                    }
+                });
+                ui.label(RichText::new("  0 = no compression (fast), 9 = best compression (slow)")
+                    .color(theme.text_muted).size(11.0));
             });
 
         ui.add_space(12.0);

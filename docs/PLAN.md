@@ -219,22 +219,31 @@ src/
 
 ---
 
-### Spiral 5: Backup System
+### Spiral 5: Backup System ✅ COMPLETE
 **Goal:** Create and restore save backups
 
 **Tasks:**
-- [ ] List existing backups
-- [ ] Create backup (compress saves to ZIP)
-- [ ] Restore backup (extract, handle conflicts)
-- [ ] Auto-backup before updates
-- [ ] Configurable backup retention
+- [x] List existing backups with metadata (7 columns: name, date, worlds, chars, size, uncompressed, ratio)
+- [x] Create manual backup (user-named, compress saves to ZIP)
+- [x] Restore backup (extract, optional pre-restore backup)
+- [x] Delete backup with confirmation
+- [x] Auto-backup before updates (creates `auto_before_update_{version}`)
+- [x] Configurable backup retention (max auto-backups to keep)
+- [x] Backup settings in Settings tab:
+  - Auto-backup before update toggle (default on)
+  - Auto-backup before launch toggle
+  - Skip backup when restoring toggle
+  - Max auto-backups count
+  - Compression level slider (0-9)
 
-**Files to modify:**
-- `src/ui/backups_tab.rs` - new file
-- `src/services/backup.rs` - new file
-- `src/utils/archive.rs` - add compression
+**Files modified:**
+- `src/backup.rs` - new module with backup operations (create, list, restore, delete, auto-backup, retention)
+- `src/config.rs` - expanded BackupConfig with auto-backup settings
+- `src/app.rs` - backup state, Backups tab UI, Settings backup section, update integration
+- `src/main.rs` - added backup module
+- `Cargo.toml` - added walkdir crate for directory traversal
 
-**Rust concepts:** Directory traversal, ZIP creation, timestamps
+**Rust concepts:** walkdir for recursive traversal, ZipWriter for compression, watch channels for async progress, spawn_blocking for I/O
 
 ---
 
@@ -268,5 +277,5 @@ src/
 
 ## Current Status
 
-**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅, Spiral 4 ✅
-**Next:** Spiral 5 - Backup System
+**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅, Spiral 4 ✅, Spiral 5 ✅
+**Next:** Spiral 6 - Soundpacks

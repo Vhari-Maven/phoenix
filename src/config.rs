@@ -123,25 +123,41 @@ fn default_max_downloads() -> u8 {
 /// Backup settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupConfig {
-    /// Maximum number of backups to keep
+    /// Maximum number of auto-backups to keep (1-1000)
     #[serde(default = "default_max_backups")]
     pub max_count: u32,
-    /// Compression level (0-9)
+    /// Compression level (0-9, where 0=store, 9=best)
     #[serde(default = "default_compression")]
     pub compression_level: u8,
+    /// Auto-backup before game launch
+    #[serde(default)]
+    pub backup_on_launch: bool,
+    /// Auto-backup after game closes
+    #[serde(default)]
+    pub backup_on_end: bool,
+    /// Auto-backup before updates
+    #[serde(default = "default_true")]
+    pub backup_before_update: bool,
+    /// Skip backing up current saves before restore
+    #[serde(default)]
+    pub skip_backup_before_restore: bool,
 }
 
 impl Default for BackupConfig {
     fn default() -> Self {
         Self {
-            max_count: 10,
+            max_count: 6,
             compression_level: 6,
+            backup_on_launch: false,
+            backup_on_end: false,
+            backup_before_update: true,
+            skip_backup_before_restore: false,
         }
     }
 }
 
 fn default_max_backups() -> u32 {
-    10
+    6
 }
 
 fn default_compression() -> u8 {
@@ -210,8 +226,12 @@ mod tests {
         assert!(!config.updates.remove_previous_version);
 
         // Backup defaults
-        assert_eq!(config.backups.max_count, 10);
+        assert_eq!(config.backups.max_count, 6);
         assert_eq!(config.backups.compression_level, 6);
+        assert!(!config.backups.backup_on_launch);
+        assert!(!config.backups.backup_on_end);
+        assert!(config.backups.backup_before_update);
+        assert!(!config.backups.skip_backup_before_restore);
     }
 
     #[test]

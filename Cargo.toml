@@ -41,6 +41,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 image = "0.25"
 
 # Utilities
+walkdir = "2"
 sha2 = "0.10"
 directories = "5"
 chrono = { version = "0.4", features = ["serde"] }

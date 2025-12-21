@@ -17,10 +17,11 @@ use crate::migration::{self, MigrationPlan, CONFIG_SKIP_FILES};
 
 /// Directories to always restore completely (no smart filtering)
 const SIMPLE_RESTORE_DIRS: &[&str] = &[
-    "save",      // Player saves - CRITICAL
-    "templates", // Character templates
-    "memorial",  // Memorial files
-    "graveyard", // Graveyard data
+    "save",         // Player saves - CRITICAL
+    "save_backups", // User backup archives
+    "templates",    // Character templates
+    "memorial",     // Memorial files
+    "graveyard",    // Graveyard data
 ];
 
 /// Current phase of the update process

@@ -50,6 +50,7 @@ phoenix/
 ├── src/
 │   ├── main.rs          # Entry point, logging setup, icon loading
 │   ├── app.rs           # Application state, UI, tab system
+│   ├── backup.rs        # Save backup creation, restoration, auto-backup
 │   ├── config.rs        # Configuration management (TOML)
 │   ├── db.rs            # SQLite database for version caching
 │   ├── game.rs          # Game detection and launching
@@ -73,8 +74,13 @@ See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
 - Spiral 4: Download & Update - progress tracking, smart migration, performance optimization
   - Update time reduced from ~54s to ~18s via deferred backup deletion
   - Background cleanup doesn't block user
+- Spiral 5: Backup System - full backup management
+  - Manual and automatic backups (before updates)
+  - Backup list with 7-column metadata display
+  - Restore with optional pre-restore backup
+  - Configurable retention and compression
 
-**Next:** Spiral 5 - Backup System
+**Next:** Spiral 6 - Soundpacks
 
 ## Key External APIs
 
@@ -102,8 +108,12 @@ prevent_save_move = false      # Leave saves in place during updates
 remove_previous_version = false # Auto-delete backup after update
 
 [backups]
-max_count = 10
+max_count = 6
 compression_level = 6
+backup_on_launch = false           # Auto-backup before game launch
+backup_on_end = false              # Auto-backup after game closes
+backup_before_update = true        # Auto-backup before updates
+skip_backup_before_restore = false # Skip pre-restore backup
 ```
 
 ## Code Style
