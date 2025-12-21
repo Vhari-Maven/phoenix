@@ -99,6 +99,14 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_version ON game_versions(version);
+
+            -- Cache for executable SHA256 hashes (avoids recalculating on every startup)
+            CREATE TABLE IF NOT EXISTS exe_hash_cache (
+                path TEXT PRIMARY KEY,
+                size INTEGER NOT NULL,
+                mtime INTEGER NOT NULL,
+                sha256 TEXT NOT NULL
+            );
             "
         )?;
         Ok(())
@@ -166,6 +174,32 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Get cached SHA256 hash for an executable if file metadata matches
+    pub fn get_cached_hash(&self, path: &str, size: u64, mtime: i64) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT sha256 FROM exe_hash_cache WHERE path = ? AND size = ? AND mtime = ?"
+        )?;
+
+        let result = stmt.query_row(params![path, size as i64, mtime], |row| {
+            row.get::<_, String>(0)
+        });
+
+        match result {
+            Ok(hash) => Ok(Some(hash)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Store SHA256 hash in cache with file metadata
+    pub fn store_cached_hash(&self, path: &str, size: u64, mtime: i64, sha256: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO exe_hash_cache (path, size, mtime, sha256) VALUES (?, ?, ?, ?)",
+            params![path, size as i64, mtime, sha256],
+        )?;
+        Ok(())
     }
 }
 

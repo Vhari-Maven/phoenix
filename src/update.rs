@@ -219,15 +219,16 @@ pub async fn install_update(
 ) -> Result<()> {
     let update_start = Instant::now();
     let previous_version_dir = game_dir.join("previous_version");
+    let old_backup_dir = game_dir.join("previous_version_old");
 
-    // Phase 1: Backup current installation
+    // Phase 1: Backup current installation (fast - uses rename, defers deletion)
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::BackingUp,
         ..Default::default()
     });
 
     let phase_start = Instant::now();
-    backup_current_installation(&game_dir, &previous_version_dir).await?;
+    backup_current_installation(&game_dir, &previous_version_dir, &old_backup_dir, prevent_save_move).await?;
     tracing::info!("Backup complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
     // Phase 2: Extract new version
@@ -253,7 +254,21 @@ pub async fn install_update(
     restore_user_directories_smart(&previous_version_dir, &game_dir, prevent_save_move).await?;
     tracing::info!("Restore complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
-    // Phase 4: Optional cleanup of previous_version
+    // Phase 4: Cleanup
+    // Always delete old_backup_dir (the stale previous_version from last update)
+    // Delete in background to not block completion
+    let old_backup_for_cleanup = old_backup_dir.clone();
+    tokio::spawn(async move {
+        if old_backup_for_cleanup.exists() {
+            if let Err(e) = tokio::fs::remove_dir_all(&old_backup_for_cleanup).await {
+                tracing::warn!("Failed to remove old backup: {}", e);
+            } else {
+                tracing::debug!("Cleaned up old backup directory");
+            }
+        }
+    });
+
+    // Optional cleanup of current previous_version
     if remove_previous_version {
         if let Err(e) = tokio::fs::remove_dir_all(&previous_version_dir).await {
             tracing::warn!("Failed to remove previous_version: {}", e);
@@ -273,19 +288,42 @@ pub async fn install_update(
 }
 
 /// Move current installation to backup directory.
-async fn backup_current_installation(game_dir: &Path, backup_dir: &Path) -> Result<()> {
-    // Remove old previous_version if exists
-    if backup_dir.exists() {
-        tokio::fs::remove_dir_all(backup_dir)
+///
+/// Uses fast rename operations to avoid blocking on deletion:
+/// 1. If old_backup_dir exists, delete it (from a previous failed update)
+/// 2. If backup_dir exists, rename it to old_backup_dir (instant)
+/// 3. Create new backup_dir and move files into it
+///
+/// The old_backup_dir will be cleaned up in the background after the update completes.
+async fn backup_current_installation(
+    game_dir: &Path,
+    backup_dir: &Path,
+    old_backup_dir: &Path,
+    prevent_save_move: bool,
+) -> Result<()> {
+    // If old_backup_dir exists from a previous failed update, remove it first
+    // This should be rare, so blocking here is acceptable
+    if old_backup_dir.exists() {
+        tokio::fs::remove_dir_all(old_backup_dir)
             .await
-            .context("Failed to remove old previous_version directory")?;
+            .context("Failed to remove stale old backup directory")?;
     }
 
+    // If backup_dir exists, rename it to old_backup_dir (instant operation)
+    // This is the key optimization - we defer the expensive deletion
+    if backup_dir.exists() {
+        tokio::fs::rename(backup_dir, old_backup_dir)
+            .await
+            .context("Failed to rename previous_version to old backup")?;
+        tracing::debug!("Renamed existing previous_version to old backup (deferred deletion)");
+    }
+
+    // Create fresh backup directory
     tokio::fs::create_dir_all(backup_dir)
         .await
         .context("Failed to create previous_version directory")?;
 
-    // Move all files/dirs except previous_version itself
+    // Move all files/dirs except backup directories and download files
     let mut entries = tokio::fs::read_dir(game_dir)
         .await
         .context("Failed to read game directory")?;
@@ -295,8 +333,13 @@ async fn backup_current_installation(game_dir: &Path, backup_dir: &Path) -> Resu
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        // Skip previous_version directory and any .part download files
-        if name_str == "previous_version" || name_str.ends_with(".part") {
+        // Skip backup directories and any .part download files
+        // Also skip save directory if prevent_save_move is enabled (leave saves in place)
+        if name_str == "previous_version"
+            || name_str == "previous_version_old"
+            || name_str.ends_with(".part")
+            || (name_str == "save" && prevent_save_move)
+        {
             continue;
         }
 
@@ -802,9 +845,10 @@ mod tests {
         )
         .unwrap();
 
-        // Backup the installation
+        // Backup the installation (prevent_save_move = false, so saves are backed up)
         let backup_dir = game_dir.join("previous_version");
-        backup_current_installation(&game_dir, &backup_dir).await.unwrap();
+        let old_backup_dir = game_dir.join("previous_version_old");
+        backup_current_installation(&game_dir, &backup_dir, &old_backup_dir, false).await.unwrap();
 
         // Verify backup contains the files
         assert!(backup_dir.join("cataclysm-tiles.exe").exists());
@@ -869,26 +913,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_backup_removes_old_previous_version() {
+    async fn test_backup_renames_old_previous_version() {
         let temp_dir = TempDir::new().unwrap();
         let game_dir = temp_dir.path().to_path_buf();
 
         // Create an old previous_version directory
         let backup_dir = game_dir.join("previous_version");
+        let old_backup_dir = game_dir.join("previous_version_old");
         fs::create_dir_all(&backup_dir).unwrap();
         fs::write(backup_dir.join("old_file.txt"), b"old data").unwrap();
 
         // Create current game files
         fs::write(game_dir.join("game.exe"), b"game").unwrap();
 
-        // Backup should remove old previous_version
-        backup_current_installation(&game_dir, &backup_dir).await.unwrap();
+        // Backup should rename old previous_version to old_backup_dir
+        backup_current_installation(&game_dir, &backup_dir, &old_backup_dir, false).await.unwrap();
 
-        // Old file should be gone
-        assert!(!backup_dir.join("old_file.txt").exists());
+        // Old file should be in old_backup_dir (renamed, not deleted)
+        assert!(old_backup_dir.join("old_file.txt").exists());
 
-        // New file should be there
+        // New previous_version should have current game file
         assert!(backup_dir.join("game.exe").exists());
+        assert!(!backup_dir.join("old_file.txt").exists());
     }
 
     #[tokio::test]

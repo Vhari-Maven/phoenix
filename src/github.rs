@@ -152,100 +152,75 @@ impl GitHubClient {
         }
     }
 
-    /// Fetch all git tags and filter for stable release tags
-    async fn get_stable_tags(&self) -> Result<(Vec<String>, RateLimitInfo)> {
-        let url = format!(
-            "{}/repos/{}/git/refs/tags",
-            GITHUB_API_BASE, CDDA_REPO
-        );
+    /// Known stable version letters (A through J)
+    /// Includes future letters (H, I, J) that will return 404 until released.
+    /// CDDA releases ~1 major version per year, so this covers several years.
+    const STABLE_VERSIONS: &'static [char] = &['J', 'I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A'];
 
-        let response = self
-            .client
-            .get(&url)
-            .header("Accept", "application/vnd.github.v3+json")
-            .send()
-            .await?;
+    /// Maximum point release number to check (e.g., 0.F-3)
+    /// Set high enough to handle any reasonable point release count.
+    const MAX_POINT_RELEASE: u8 = 10;
 
-        let rate_limit = RateLimitInfo::from_response(&response);
+    /// Generate candidate stable tags to try
+    /// Returns tags in priority order (latest point release first for each version)
+    fn generate_stable_tag_candidates() -> Vec<String> {
+        let mut candidates = Vec::new();
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitHub API error fetching tags: {} - {}", status, text);
+        for &letter in Self::STABLE_VERSIONS {
+            // Try point releases first (highest to lowest), then base version
+            for point in (0..=Self::MAX_POINT_RELEASE).rev() {
+                if point == 0 {
+                    candidates.push(format!("0.{}", letter));
+                } else {
+                    candidates.push(format!("0.{}-{}", letter, point));
+                }
+            }
         }
 
-        let refs: Vec<GitRef> = response.json().await?;
-        let regex = stable_tag_regex();
-
-        // Extract tag names and filter for stable releases
-        let mut tags: Vec<String> = refs
-            .into_iter()
-            .filter_map(|r| {
-                // Strip "refs/tags/" prefix
-                let tag = r.ref_name.strip_prefix("refs/tags/")?;
-                // Check if it matches stable pattern
-                if regex.is_match(tag) {
-                    Some(tag.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Sort by version letter (descending) then by point release number (descending)
-        // e.g., 0.G, 0.F-3, 0.F-2, 0.F-1, 0.F, 0.E-3, ...
-        tags.sort_by(|a, b| {
-            // Extract version letter and point release
-            let parse = |s: &str| -> (char, i32) {
-                let s = s.strip_prefix("cdda-").unwrap_or(s);
-                let letter = s.chars().nth(2).unwrap_or('A');
-                let point = s
-                    .split('-')
-                    .nth(1)
-                    .and_then(|n| n.parse().ok())
-                    .unwrap_or(0);
-                (letter, point)
-            };
-            let (la, pa) = parse(a);
-            let (lb, pb) = parse(b);
-            // Sort by letter desc, then point release desc
-            lb.cmp(&la).then(pb.cmp(&pa))
-        });
-
-        // Remove cdda- prefixed duplicates (keep only non-prefixed if both exist)
-        let mut seen_versions = std::collections::HashSet::new();
-        tags.retain(|tag| {
-            let normalized = tag.strip_prefix("cdda-").unwrap_or(tag);
-            if seen_versions.contains(normalized) {
-                false
-            } else {
-                seen_versions.insert(normalized.to_string());
-                true
-            }
-        });
-
-        tracing::info!("Found {} stable tags", tags.len());
-        Ok((tags, rate_limit))
+        candidates
     }
 
-    /// Fetch stable releases by discovering tags from GitHub
+    /// Fetch stable releases by trying known tag patterns directly
+    /// This avoids fetching all tags (which is slow due to thousands of experimental tags)
     pub async fn get_stable_releases(&self) -> Result<FetchResult<Vec<Release>>> {
         let start = std::time::Instant::now();
 
-        // First, get all stable tags
-        let (tags, mut last_rate_limit) = self.get_stable_tags().await?;
+        // Generate all candidate tags and fetch them in parallel
+        let candidates = Self::generate_stable_tag_candidates();
 
-        let mut stable = Vec::new();
+        let futures: Vec<_> = candidates
+            .iter()
+            .map(|tag| self.get_release_by_tag(tag))
+            .collect();
 
-        // Fetch release info for each tag
-        for tag in &tags {
-            let (release, rate_limit) = self.get_release_by_tag(tag).await;
+        let results = futures::future::join_all(futures).await;
+
+        // Collect successful releases, keeping only the latest per version letter
+        let mut releases_by_letter: std::collections::HashMap<char, Release> =
+            std::collections::HashMap::new();
+        let mut last_rate_limit = RateLimitInfo::default();
+
+        for (release, rate_limit) in results {
             last_rate_limit = rate_limit;
-
             if let Some(r) = release {
-                stable.push(r);
+                // Extract version letter from tag
+                let tag = r.tag_name.strip_prefix("cdda-").unwrap_or(&r.tag_name);
+                if let Some(letter) = tag.chars().nth(2) {
+                    // Only keep the first (latest) release for each letter
+                    releases_by_letter.entry(letter).or_insert(r);
+                }
             }
         }
+
+        // Convert to sorted vec (by letter descending)
+        let mut stable: Vec<Release> = releases_by_letter.into_values().collect();
+        stable.sort_by(|a, b| {
+            let get_letter = |tag: &str| -> char {
+                let tag = tag.strip_prefix("cdda-").unwrap_or(tag);
+                tag.chars().nth(2).unwrap_or('A')
+            };
+            get_letter(&b.tag_name).cmp(&get_letter(&a.tag_name))
+        });
 
         tracing::info!(
             "Fetched {} stable releases in {:.1}s",

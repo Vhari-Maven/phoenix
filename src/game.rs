@@ -48,6 +48,11 @@ pub fn detect_game(directory: &Path) -> Result<Option<GameInfo>> {
 }
 
 /// Detect game installation with optional database for version lookup
+///
+/// Optimized flow:
+/// 1. Try VERSION.txt first (fast - experimental builds always have this)
+/// 2. Only calculate SHA256 if VERSION.txt missing (needed for stable lookup)
+/// 3. Use cached hash when possible to avoid expensive recalculation
 pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Option<GameInfo>> {
     // Look for game executable
     let executable = GAME_EXECUTABLES
@@ -59,24 +64,40 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
         return Ok(None);
     };
 
-    // Calculate SHA256 of executable
-    let sha256 = calculate_sha256(&executable)?;
+    // Fast path: Try VERSION.txt first (experimental builds always have this)
+    if let Some(version_info) = read_version_txt(directory) {
+        // Calculate saves size
+        let saves_dir = directory.join("save");
+        let saves_size = if saves_dir.exists() {
+            calculate_dir_size(&saves_dir).unwrap_or(0)
+        } else {
+            0
+        };
 
-    // Look up version from database
+        return Ok(Some(GameInfo {
+            directory: directory.to_path_buf(),
+            executable,
+            sha256: String::new(), // Not needed for experimental builds
+            version_info: Some(version_info),
+            saves_size,
+        }));
+    }
+
+    // Slow path: No VERSION.txt, need SHA256 for stable version lookup
+    // Use cached hash if available to avoid expensive recalculation
+    let sha256 = get_or_calculate_sha256(&executable, db)?;
+
+    // Look up version from database (for stable releases)
     let version_info = if let Some(db) = db {
         match db.get_version(&sha256) {
-            Ok(Some(info)) => Some(info),
-            Ok(None) => {
-                // Try to read VERSION.txt as fallback for experimental builds
-                read_version_txt(directory)
-            }
+            Ok(info) => info,
             Err(e) => {
                 tracing::warn!("Failed to look up version: {}", e);
-                read_version_txt(directory)
+                None
             }
         }
     } else {
-        read_version_txt(directory)
+        None
     };
 
     // Calculate saves size
@@ -94,6 +115,45 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
         version_info,
         saves_size,
     }))
+}
+
+/// Get file metadata (size and mtime) for cache key
+fn get_file_metadata(path: &Path) -> Result<(u64, i64)> {
+    let metadata = std::fs::metadata(path)?;
+    let size = metadata.len();
+    let mtime = metadata
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok((size, mtime))
+}
+
+/// Get SHA256 from cache or calculate it (and update cache)
+fn get_or_calculate_sha256(executable: &Path, db: Option<&Database>) -> Result<String> {
+    let path_str = executable.to_string_lossy().to_string();
+    let (size, mtime) = get_file_metadata(executable)?;
+
+    // Try to get from cache
+    if let Some(db) = db {
+        if let Ok(Some(cached_hash)) = db.get_cached_hash(&path_str, size, mtime) {
+            tracing::debug!("Using cached SHA256 for {}", executable.display());
+            return Ok(cached_hash);
+        }
+    }
+
+    // Calculate hash (slow)
+    tracing::debug!("Calculating SHA256 for {} (not cached)", executable.display());
+    let sha256 = calculate_sha256(executable)?;
+
+    // Store in cache for next time
+    if let Some(db) = db {
+        if let Err(e) = db.store_cached_hash(&path_str, size, mtime, &sha256) {
+            tracing::warn!("Failed to cache SHA256: {}", e);
+        }
+    }
+
+    Ok(sha256)
 }
 
 /// Read version info from VERSION.txt file (fallback for experimental builds)
