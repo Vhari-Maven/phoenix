@@ -3,12 +3,13 @@
 use eframe::egui::{self, Color32, RichText, Rounding, Vec2};
 use std::path::PathBuf;
 
-use crate::app::{PhoenixApp, Tab};
+use crate::app::PhoenixApp;
+use crate::state::Tab;
 
 /// Render a tab button
 pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str) {
-    let theme = &app.current_theme;
-    let is_active = app.active_tab == tab;
+    let theme = &app.ui.current_theme;
+    let is_active = app.ui.active_tab == tab;
 
     let (bg, text_color) = if is_active {
         (theme.bg_medium, theme.accent)
@@ -27,13 +28,13 @@ pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str
         .min_size(Vec2::new(80.0, 32.0));
 
     if ui.add(button).clicked() {
-        let previous_tab = app.active_tab;
-        app.active_tab = tab;
+        let previous_tab = app.ui.active_tab;
+        app.ui.active_tab = tab;
 
         // Load backup list when switching to Backups tab
         if tab == Tab::Backups && previous_tab != Tab::Backups {
             if let Some(ref dir) = app.config.game.directory {
-                if app.backup_list.is_empty() && !app.backup_list_loading {
+                if app.backup.list.is_empty() && !app.backup.list_loading {
                     app.refresh_backup_list(&PathBuf::from(dir));
                 }
             }
@@ -42,7 +43,7 @@ pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str
         // Load soundpack list when switching to Soundpacks tab
         if tab == Tab::Soundpacks && previous_tab != Tab::Soundpacks {
             if let Some(ref dir) = app.config.game.directory {
-                if app.soundpack_list.is_empty() && !app.soundpack_list_loading {
+                if app.soundpack.list.is_empty() && !app.soundpack.list_loading {
                     app.refresh_soundpack_list(&PathBuf::from(dir));
                 }
             }
@@ -52,11 +53,11 @@ pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str
 
 /// Render the About dialog
 pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
-    if !app.show_about_dialog {
+    if !app.ui.show_about_dialog {
         return;
     }
 
-    let theme = &app.current_theme;
+    let theme = &app.ui.current_theme;
 
     egui::Window::new("About Phoenix")
         .collapsible(false)
@@ -126,7 +127,7 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
 
                 // Close button
                 if ui.button("Close").clicked() {
-                    app.show_about_dialog = false;
+                    app.ui.show_about_dialog = false;
                 }
 
                 ui.add_space(8.0);

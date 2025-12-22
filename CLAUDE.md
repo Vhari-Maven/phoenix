@@ -72,13 +72,23 @@ phoenix/
 ├── reference/           # Original Python source (gitignored)
 ├── src/
 │   ├── main.rs          # Entry point, logging setup, icon loading
-│   ├── app.rs           # Application state + coordination (~1,165 lines)
+│   ├── app.rs           # Application state + coordination (~474 lines)
+│   ├── state/           # Grouped state structs with poll methods
+│   │   ├── mod.rs       #   StateEvent enum + module exports
+│   │   ├── ui.rs        #   UiState, Tab enum
+│   │   ├── backup.rs    #   BackupState + poll
+│   │   ├── soundpack.rs #   SoundpackState + poll
+│   │   ├── update.rs    #   UpdateState + poll
+│   │   └── releases.rs  #   ReleasesState + poll
 │   ├── ui/              # Extracted UI modules
 │   │   ├── mod.rs       #   Module exports
+│   │   ├── components.rs#   Shared UI components (tabs, dialogs)
 │   │   ├── main_tab.rs  #   Game info, updates, changelog (~502 lines)
 │   │   ├── backups_tab.rs#  Backup list, create/restore/delete (~417 lines)
 │   │   ├── soundpacks_tab.rs# Two-column layout, install/delete (~576 lines)
 │   │   └── settings_tab.rs#  Appearance, behavior, game settings (~323 lines)
+│   ├── task.rs          # Generic task polling helper
+│   ├── util.rs          # Shared utilities (format_size)
 │   ├── backup.rs        # Save backup creation, restoration, auto-backup
 │   ├── config.rs        # Configuration management (TOML)
 │   ├── db.rs            # SQLite database for version caching
@@ -104,10 +114,11 @@ See [docs/REFACTOR.md](docs/REFACTOR.md) for the full refactoring plan.
 - Executable icon embedding via build.rs
 - Console window hidden in release builds
 - Phase 1: UI Module Extraction (app.rs reduced from ~2,700 to ~1,165 lines)
+- Phase 1.5: UI Components & Task Helper (app.rs reduced to ~988 lines)
+- Phase 2: format_size() deduplication into util.rs
+- Phase 3: State Struct Extraction (app.rs reduced to ~474 lines)
 
 **Planned:**
-- Phase 2: Deduplication (format_size, progress rendering, async polling)
-- Phase 3: State Organization (group PhoenixApp's 50+ fields)
 - Phase 4: Service Abstraction (optional)
 
 ## MVP Status

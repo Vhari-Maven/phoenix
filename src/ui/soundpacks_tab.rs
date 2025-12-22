@@ -10,7 +10,7 @@ use crate::util::format_size;
 
 /// Render the soundpacks tab
 pub fn render_soundpacks_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
-    let theme = app.current_theme.clone();
+    let theme = app.ui.current_theme.clone();
 
     ui.label(
         RichText::new("Soundpacks")
@@ -50,25 +50,25 @@ pub fn render_soundpacks_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
     // Progress section
     if is_busy
-        || app.soundpack_progress.phase == SoundpackPhase::Complete
-        || app.soundpack_progress.phase == SoundpackPhase::Failed
+        || app.soundpack.progress.phase == SoundpackPhase::Complete
+        || app.soundpack.progress.phase == SoundpackPhase::Failed
     {
         ui.add_space(12.0);
         render_soundpack_progress(app, ui, &theme);
     }
 
     // Delete confirmation dialog
-    if app.soundpack_confirm_delete {
+    if app.soundpack.confirm_delete {
         render_soundpack_delete_dialog(app, ui, &theme, &game_dir);
     }
 
     // Browser download dialog
-    if app.browser_download_url.is_some() {
+    if app.soundpack.browser_download_url.is_some() {
         render_browser_download_dialog(app, ui, &theme, &game_dir);
     }
 
     // Error display
-    if let Some(ref err) = app.soundpack_error {
+    if let Some(ref err) = app.soundpack.error {
         ui.add_space(8.0);
         ui.label(RichText::new(format!("Error: {}", err)).color(theme.error));
     }
@@ -118,15 +118,15 @@ fn render_installed_soundpacks_panel(
                 .id_salt("installed_soundpacks")
                 .max_height(200.0)
                 .show(ui, |ui| {
-                    if app.soundpack_list.is_empty() && !app.soundpack_list_loading {
+                    if app.soundpack.list.is_empty() && !app.soundpack.list_loading {
                         ui.label(
                             RichText::new("No soundpacks installed")
                                 .color(theme.text_muted)
                                 .italics(),
                         );
                     } else {
-                        for (idx, soundpack) in app.soundpack_list.iter().enumerate() {
-                            let is_selected = app.soundpack_installed_idx == Some(idx);
+                        for (idx, soundpack) in app.soundpack.list.iter().enumerate() {
+                            let is_selected = app.soundpack.installed_idx == Some(idx);
                             let display_name = if soundpack.enabled {
                                 soundpack.view_name.clone()
                             } else {
@@ -145,8 +145,8 @@ fn render_installed_soundpacks_panel(
                             );
 
                             if response.clicked() {
-                                app.soundpack_installed_idx = Some(idx);
-                                app.soundpack_repo_idx = None;
+                                app.soundpack.installed_idx = Some(idx);
+                                app.soundpack.repo_idx = None;
                             }
                         }
                     }
@@ -156,10 +156,10 @@ fn render_installed_soundpacks_panel(
 
             // Action buttons
             ui.horizontal(|ui| {
-                let has_selection = app.soundpack_installed_idx.is_some();
+                let has_selection = app.soundpack.installed_idx.is_some();
                 let selected_enabled = app
-                    .soundpack_installed_idx
-                    .and_then(|i| app.soundpack_list.get(i))
+                    .soundpack.installed_idx
+                    .and_then(|i| app.soundpack.list.get(i))
                     .map(|s| s.enabled)
                     .unwrap_or(false);
 
@@ -172,8 +172,8 @@ fn render_installed_soundpacks_panel(
                     )
                     .clicked()
                 {
-                    if let Some(idx) = app.soundpack_installed_idx {
-                        if let Some(soundpack) = app.soundpack_list.get(idx) {
+                    if let Some(idx) = app.soundpack.installed_idx {
+                        if let Some(soundpack) = app.soundpack.list.get(idx) {
                             let path = soundpack.path.clone();
                             let new_enabled = !soundpack.enabled;
                             let game_dir = game_dir.to_path_buf();
@@ -199,7 +199,7 @@ fn render_installed_soundpacks_panel(
                     )
                     .clicked()
                 {
-                    app.soundpack_confirm_delete = true;
+                    app.soundpack.confirm_delete = true;
                 }
             });
         });
@@ -232,10 +232,10 @@ fn render_repository_soundpacks_panel(
                 .id_salt("repository_soundpacks")
                 .max_height(200.0)
                 .show(ui, |ui| {
-                    for (idx, repo_soundpack) in app.soundpack_repository.iter().enumerate() {
-                        let is_selected = app.soundpack_repo_idx == Some(idx);
+                    for (idx, repo_soundpack) in app.soundpack.repository.iter().enumerate() {
+                        let is_selected = app.soundpack.repo_idx == Some(idx);
                         let is_installed =
-                            soundpack::is_soundpack_installed(&app.soundpack_list, &repo_soundpack.name);
+                            soundpack::is_soundpack_installed(&app.soundpack.list, &repo_soundpack.name);
 
                         let display_name = if is_installed {
                             format!("{} ✓", repo_soundpack.viewname)
@@ -255,8 +255,8 @@ fn render_repository_soundpacks_panel(
                         );
 
                         if response.clicked() {
-                            app.soundpack_repo_idx = Some(idx);
-                            app.soundpack_installed_idx = None;
+                            app.soundpack.repo_idx = Some(idx);
+                            app.soundpack.installed_idx = None;
                         }
                     }
                 });
@@ -265,11 +265,11 @@ fn render_repository_soundpacks_panel(
 
             // Install button
             ui.horizontal(|ui| {
-                let has_selection = app.soundpack_repo_idx.is_some();
+                let has_selection = app.soundpack.repo_idx.is_some();
                 let selected_installed = app
-                    .soundpack_repo_idx
-                    .and_then(|i| app.soundpack_repository.get(i))
-                    .map(|r| soundpack::is_soundpack_installed(&app.soundpack_list, &r.name))
+                    .soundpack.repo_idx
+                    .and_then(|i| app.soundpack.repository.get(i))
+                    .map(|r| soundpack::is_soundpack_installed(&app.soundpack.list, &r.name))
                     .unwrap_or(false);
 
                 if ui
@@ -281,8 +281,8 @@ fn render_repository_soundpacks_panel(
                     )
                     .clicked()
                 {
-                    if let Some(idx) = app.soundpack_repo_idx {
-                        if let Some(repo_soundpack) = app.soundpack_repository.get(idx) {
+                    if let Some(idx) = app.soundpack.repo_idx {
+                        if let Some(repo_soundpack) = app.soundpack.repository.get(idx) {
                             app.install_soundpack(repo_soundpack.clone(), game_dir);
                         }
                     }
@@ -308,8 +308,8 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
             ui.add_space(8.0);
 
             // Show details for selected soundpack
-            if let Some(idx) = app.soundpack_installed_idx {
-                if let Some(soundpack) = app.soundpack_list.get(idx) {
+            if let Some(idx) = app.soundpack.installed_idx {
+                if let Some(soundpack) = app.soundpack.list.get(idx) {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("View name:").color(theme.text_muted));
                         ui.label(RichText::new(&soundpack.view_name).color(theme.text_primary));
@@ -343,8 +343,8 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
                         ui.label(RichText::new(status).color(color));
                     });
                 }
-            } else if let Some(idx) = app.soundpack_repo_idx {
-                if let Some(repo) = app.soundpack_repository.get(idx) {
+            } else if let Some(idx) = app.soundpack.repo_idx {
+                if let Some(repo) = app.soundpack.repository.get(idx) {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("View name:").color(theme.text_muted));
                         ui.label(RichText::new(&repo.viewname).color(theme.text_primary));
@@ -384,7 +384,7 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
 
 /// Render soundpack progress
 fn render_soundpack_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
-    let progress = &app.soundpack_progress;
+    let progress = &app.soundpack.progress;
 
     egui::Frame::none()
         .fill(theme.bg_medium)
@@ -465,8 +465,8 @@ fn render_soundpack_delete_dialog(
     game_dir: &Path,
 ) {
     let selected_name = app
-        .soundpack_installed_idx
-        .and_then(|i| app.soundpack_list.get(i))
+        .soundpack.installed_idx
+        .and_then(|i| app.soundpack.list.get(i))
         .map(|s| s.view_name.clone())
         .unwrap_or_default();
 
@@ -492,8 +492,8 @@ fn render_soundpack_delete_dialog(
                     .button(RichText::new("Delete").color(theme.error))
                     .clicked()
                 {
-                    if let Some(idx) = app.soundpack_installed_idx {
-                        if let Some(soundpack) = app.soundpack_list.get(idx) {
+                    if let Some(idx) = app.soundpack.installed_idx {
+                        if let Some(soundpack) = app.soundpack.list.get(idx) {
                             let path = soundpack.path.clone();
                             let game_dir = game_dir.to_path_buf();
 
@@ -503,18 +503,18 @@ fn render_soundpack_delete_dialog(
                                 Err(SoundpackError::Cancelled) // Will be handled specially
                             });
 
-                            app.soundpack_task = Some(task);
-                            app.soundpack_installed_idx = None;
+                            app.soundpack.task = Some(task);
+                            app.soundpack.installed_idx = None;
 
                             // Schedule list refresh
                             app.refresh_soundpack_list(&game_dir);
                         }
                     }
-                    app.soundpack_confirm_delete = false;
+                    app.soundpack.confirm_delete = false;
                 }
 
                 if ui.button("Cancel").clicked() {
-                    app.soundpack_confirm_delete = false;
+                    app.soundpack.confirm_delete = false;
                 }
             });
         });
@@ -527,7 +527,7 @@ fn render_browser_download_dialog(
     theme: &Theme,
     game_dir: &Path,
 ) {
-    let url = app.browser_download_url.clone().unwrap_or_default();
+    let url = app.soundpack.browser_download_url.clone().unwrap_or_default();
 
     egui::Window::new("Browser Download Required")
         .collapsible(false)
@@ -563,14 +563,14 @@ fn render_browser_download_dialog(
                     {
                         // Start installation from file
                         app.install_soundpack_from_file(path, game_dir);
-                        app.browser_download_url = None;
-                        app.browser_download_soundpack = None;
+                        app.soundpack.browser_download_url = None;
+                        app.soundpack.browser_download_soundpack = None;
                     }
                 }
 
                 if ui.button("Cancel").clicked() {
-                    app.browser_download_url = None;
-                    app.browser_download_soundpack = None;
+                    app.soundpack.browser_download_url = None;
+                    app.soundpack.browser_download_soundpack = None;
                 }
             });
         });

@@ -4,67 +4,53 @@ This document tracks refactoring work to improve maintainability after MVP compl
 
 ---
 
-## Next Steps
-
-**Goal:** Reduce `app.rs` from ~988 to ~700 lines.
-
-| Priority | Task | Savings | Complexity |
-|----------|------|---------|------------|
-| 1 | Group state into nested structs (Phase 3) | ~200 lines | Medium |
-
-### Task: State Structs (Phase 3)
-
-Group `PhoenixApp`'s 50+ fields into nested structs:
-```rust
-pub struct PhoenixApp {
-    config: Config,
-    db: Option<Database>,
-    ui: UiState,
-    releases: ReleasesState,
-    update: UpdateState,
-    backup: BackupState,
-    soundpack: SoundpackState,
-}
-```
-
-Each state struct would own its `poll()` method, moving ~200 lines out of `app.rs`.
-
----
-
 ## Current State
 
 ### Module Sizes
 
 | File | Lines | Status |
 |------|-------|--------|
-| `app.rs` | ~988 | Improved (was ~2,700) |
+| `app.rs` | ~474 | Excellent (was ~2,700 → ~988 → ~474) |
+| `state/backup.rs` | ~254 | New - BackupState + poll |
+| `state/update.rs` | ~206 | New - UpdateState + poll |
+| `state/soundpack.rs` | ~202 | New - SoundpackState + poll |
+| `state/releases.rs` | ~169 | New - ReleasesState + poll |
+| `state/ui.rs` | ~42 | New - UiState + Tab enum |
+| `state/mod.rs` | ~33 | New - StateEvent enum |
 | `ui/soundpacks_tab.rs` | ~576 | Extracted |
 | `ui/main_tab.rs` | ~502 | Extracted |
 | `ui/backups_tab.rs` | ~417 | Extracted |
 | `ui/settings_tab.rs` | ~323 | Extracted |
-| `ui/components.rs` | ~135 | New - shared UI components |
-| `task.rs` | ~58 | New - task polling helper |
-| `util.rs` | ~58 | New - shared utilities |
-| `soundpack.rs` | ~885 | Good (was ~900) |
+| `ui/components.rs` | ~135 | Shared UI components |
+| `task.rs` | ~58 | Task polling helper |
+| `util.rs` | ~58 | Shared utilities |
+| `soundpack.rs` | ~885 | Good |
 | `update.rs` | ~750 | Good |
 | `backup.rs` | ~750 | Good |
 | `migration.rs` | ~700 | Good |
-| `game.rs` | ~515 | Good (was ~550) |
+| `game.rs` | ~515 | Good |
 | `github.rs` | ~330 | Excellent |
 | `config.rs` | ~290 | Excellent |
 | `theme.rs` | ~270 | Excellent |
 | `db.rs` | ~240 | Good |
-| `main.rs` | ~130 | Excellent |
+| `main.rs` | ~138 | Excellent |
 
 ### Architecture
 
 ```
 src/
 ├── main.rs              # Entry point
-├── app.rs               # PhoenixApp state + eframe::App impl (~988 lines)
+├── app.rs               # PhoenixApp coordination (~474 lines)
+├── state/               # Grouped state structs with poll methods
+│   ├── mod.rs           # StateEvent enum + module exports
+│   ├── ui.rs            # UiState, Tab enum
+│   ├── backup.rs        # BackupState + poll
+│   ├── soundpack.rs     # SoundpackState + poll
+│   ├── update.rs        # UpdateState + poll
+│   └── releases.rs      # ReleasesState + poll
 ├── task.rs              # Generic task polling helper
 ├── util.rs              # Shared utilities (format_size)
-├── ui/                  # Extracted UI modules
+├── ui/                  # UI rendering modules
 │   ├── mod.rs
 │   ├── components.rs    # Shared UI components (tabs, dialogs)
 │   ├── main_tab.rs      # Game info, updates, changelog
@@ -85,6 +71,46 @@ src/
 ---
 
 ## Completed Work
+
+### Phase 3: State Struct Extraction (Done)
+
+Extracted `PhoenixApp`'s 50+ fields into nested state structs in `src/state/`:
+
+| Module | Lines | Contents |
+|--------|-------|----------|
+| `backup.rs` | 254 | BackupState + poll + 6 methods |
+| `update.rs` | 206 | UpdateState + UpdateParams + poll |
+| `soundpack.rs` | 202 | SoundpackState + poll + 4 methods |
+| `releases.rs` | 169 | ReleasesState + poll + 5 methods |
+| `ui.rs` | 42 | UiState + Tab enum |
+| `mod.rs` | 33 | StateEvent enum + exports |
+
+**Result:** `app.rs` reduced from ~988 to ~474 lines (52% reduction)
+
+**Design decisions:**
+- `StateEvent` enum for cross-cutting concerns (status messages, refresh triggers, logging)
+- Poll methods return `Vec<StateEvent>` instead of directly mutating app state
+- Config values passed as parameters rather than stored in state structs
+- PhoenixApp has delegation methods for backward compatibility with UI modules
+
+**Final PhoenixApp structure:**
+```rust
+pub struct PhoenixApp {
+    // Core (stays at app level)
+    config: Config,
+    db: Option<Database>,
+    game_info: Option<GameInfo>,
+    status_message: String,
+    github_client: GitHubClient,
+
+    // Grouped state
+    ui: UiState,
+    releases: ReleasesState,
+    update: UpdateState,
+    backup: BackupState,
+    soundpack: SoundpackState,
+}
+```
 
 ### Phase 1: UI Module Extraction (Done)
 
@@ -148,10 +174,6 @@ Consolidated 4 copies of `format_size()` into `src/util.rs`:
 
 - ~~**format_size()** - Duplicated in `backup.rs`, `soundpack.rs`, `game.rs`~~ Done
 - **Progress rendering** - Similar patterns for update/backup/soundpack progress
-
-### Phase 3: State Organization
-
-Group `PhoenixApp`'s 50+ fields into nested structs with their own methods.
 
 ### Phase 4: Service Abstraction (Optional)
 

@@ -7,7 +7,7 @@ use crate::theme::ThemePreset;
 
 /// Render the settings tab
 pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
-    let theme = app.current_theme.clone();
+    let theme = app.ui.current_theme.clone();
 
     egui::ScrollArea::vertical()
         .id_salt("settings_scroll")
@@ -55,8 +55,8 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                         .clicked()
                                     {
                                         app.config.launcher.theme = *preset;
-                                        app.current_theme = preset.theme();
-                                        app.theme_dirty = true;
+                                        app.ui.current_theme = preset.theme();
+                                        app.ui.theme_dirty = true;
                                         app.save_config();
                                     }
                                 }

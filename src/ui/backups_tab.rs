@@ -9,7 +9,7 @@ use crate::theme::Theme;
 
 /// Render the backups tab
 pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
-    let theme = app.current_theme.clone();
+    let theme = app.ui.current_theme.clone();
 
     ui.label(
         RichText::new("Backups")
@@ -53,12 +53,12 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                 ui.label(RichText::new("Backup name:").color(theme.text_muted));
                 ui.add_sized(
                     [200.0, 20.0],
-                    egui::TextEdit::singleline(&mut app.backup_name_input).hint_text("my_backup"),
+                    egui::TextEdit::singleline(&mut app.backup.name_input).hint_text("my_backup"),
                 );
 
                 ui.add_space(16.0);
 
-                let can_backup = !is_busy && !app.backup_name_input.trim().is_empty();
+                let can_backup = !is_busy && !app.backup.name_input.trim().is_empty();
                 if ui
                     .add_enabled(can_backup, egui::Button::new("Backup Current Saves"))
                     .clicked()
@@ -68,8 +68,8 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             });
 
             // Show validation error
-            if !app.backup_name_input.is_empty() {
-                if let Err(e) = app.validate_backup_name(&app.backup_name_input) {
+            if !app.backup.name_input.is_empty() {
+                if let Err(e) = app.validate_backup_name(&app.backup.name_input) {
                     ui.add_space(4.0);
                     ui.label(RichText::new(e).color(theme.error).size(11.0));
                 }
@@ -106,12 +106,12 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             });
             ui.add_space(12.0);
 
-            if app.backup_list_loading {
+            if app.backup.list_loading {
                 ui.horizontal(|ui| {
                     ui.spinner();
                     ui.label(RichText::new("Loading backups...").color(theme.text_muted));
                 });
-            } else if app.backup_list.is_empty() {
+            } else if app.backup.list.is_empty() {
                 ui.label(RichText::new("No backups found.").color(theme.text_muted));
             } else {
                 // Backup table
@@ -169,8 +169,8 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                 ui.end_row();
 
                                 // Data rows
-                                for (i, backup) in app.backup_list.iter().enumerate() {
-                                    let is_selected = app.backup_selected_idx == Some(i);
+                                for (i, backup) in app.backup.list.iter().enumerate() {
+                                    let is_selected = app.backup.selected_idx == Some(i);
                                     let text_color = if is_selected {
                                         theme.accent
                                     } else {
@@ -191,7 +191,7 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                         )
                                         .clicked()
                                     {
-                                        app.backup_selected_idx = Some(i);
+                                        app.backup.selected_idx = Some(i);
                                     }
 
                                     ui.label(
@@ -235,14 +235,14 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
                 // Action buttons
                 ui.horizontal(|ui| {
-                    let has_selection = app.backup_selected_idx.is_some();
+                    let has_selection = app.backup.selected_idx.is_some();
 
                     // Restore button
                     if ui
                         .add_enabled(has_selection && !is_busy, egui::Button::new("Restore"))
                         .clicked()
                     {
-                        app.backup_confirm_restore = true;
+                        app.backup.confirm_restore = true;
                     }
 
                     // Delete button
@@ -250,7 +250,7 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         .add_enabled(has_selection && !is_busy, egui::Button::new("Delete"))
                         .clicked()
                     {
-                        app.backup_confirm_delete = true;
+                        app.backup.confirm_delete = true;
                     }
                 });
             }
@@ -261,15 +261,15 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
     // Progress section
     if is_busy
-        || app.backup_progress.phase == BackupPhase::Complete
-        || app.backup_progress.phase == BackupPhase::Failed
+        || app.backup.progress.phase == BackupPhase::Complete
+        || app.backup.progress.phase == BackupPhase::Failed
     {
         ui.add_space(12.0);
         render_backup_progress(app, ui, &theme);
     }
 
     // Error display
-    if let Some(ref err) = app.backup_error {
+    if let Some(ref err) = app.backup.error {
         ui.add_space(8.0);
         ui.label(RichText::new(format!("Error: {}", err)).color(theme.error));
     }
@@ -283,14 +283,14 @@ fn render_backup_confirm_dialogs(
     game_dir: &Path,
 ) {
     // Delete confirmation
-    if app.backup_confirm_delete {
+    if app.backup.confirm_delete {
         egui::Window::new("Confirm Delete")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ui.ctx(), |ui| {
-                if let Some(idx) = app.backup_selected_idx {
-                    if let Some(backup) = app.backup_list.get(idx) {
+                if let Some(idx) = app.backup.selected_idx {
+                    if let Some(backup) = app.backup.list.get(idx) {
                         ui.label(format!("Delete backup \"{}\"?", backup.name));
                         ui.add_space(8.0);
                         ui.label(RichText::new("This cannot be undone.").color(theme.warning));
@@ -298,29 +298,29 @@ fn render_backup_confirm_dialogs(
 
                         ui.horizontal(|ui| {
                             if ui.button("Cancel").clicked() {
-                                app.backup_confirm_delete = false;
+                                app.backup.confirm_delete = false;
                             }
                             if ui.button("Delete").clicked() {
                                 app.delete_selected_backup(game_dir);
-                                app.backup_confirm_delete = false;
+                                app.backup.confirm_delete = false;
                             }
                         });
                     }
                 } else {
-                    app.backup_confirm_delete = false;
+                    app.backup.confirm_delete = false;
                 }
             });
     }
 
     // Restore confirmation
-    if app.backup_confirm_restore {
+    if app.backup.confirm_restore {
         egui::Window::new("Confirm Restore")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ui.ctx(), |ui| {
-                if let Some(idx) = app.backup_selected_idx {
-                    if let Some(backup) = app.backup_list.get(idx) {
+                if let Some(idx) = app.backup.selected_idx {
+                    if let Some(backup) = app.backup.list.get(idx) {
                         ui.label(format!("Restore backup \"{}\"?", backup.name));
                         ui.add_space(8.0);
 
@@ -339,16 +339,16 @@ fn render_backup_confirm_dialogs(
 
                         ui.horizontal(|ui| {
                             if ui.button("Cancel").clicked() {
-                                app.backup_confirm_restore = false;
+                                app.backup.confirm_restore = false;
                             }
                             if ui.button("Restore").clicked() {
                                 app.restore_selected_backup(game_dir);
-                                app.backup_confirm_restore = false;
+                                app.backup.confirm_restore = false;
                             }
                         });
                     }
                 } else {
-                    app.backup_confirm_restore = false;
+                    app.backup.confirm_restore = false;
                 }
             });
     }
@@ -356,7 +356,7 @@ fn render_backup_confirm_dialogs(
 
 /// Render backup progress
 fn render_backup_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
-    let progress = &app.backup_progress;
+    let progress = &app.backup.progress;
 
     egui::Frame::none()
         .fill(theme.bg_light.gamma_multiply(0.5))

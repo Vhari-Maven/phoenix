@@ -10,7 +10,7 @@ use crate::util::format_size;
 
 /// Render the main tab content
 pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
-    let theme = app.current_theme.clone();
+    let theme = app.ui.current_theme.clone();
 
     // Game section
     render_section_frame(app, ui, "Game", |app, ui| {
@@ -103,14 +103,14 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
             ui.label(RichText::new("Release:").color(theme.text_muted));
 
-            if app.releases_loading {
+            if app.releases.loading {
                 ui.spinner();
             } else {
                 let has_releases = !app.current_releases().is_empty();
                 if has_releases {
                     let releases = app.current_releases();
                     let selected_text = app
-                        .selected_release_idx
+                        .releases.selected_idx
                         .and_then(|i| releases.get(i))
                         .map(|r| r.name.as_str())
                         .unwrap_or("Select a release")
@@ -122,7 +122,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         .map(|(i, r)| (i, format!("{} ({})", r.name, &r.published_at[..10])))
                         .collect();
 
-                    let current_selection = app.selected_release_idx;
+                    let current_selection = app.releases.selected_idx;
 
                     egui::ComboBox::from_id_salt("release_select")
                         .selected_text(&selected_text)
@@ -133,7 +133,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                     .selectable_label(current_selection == Some(*i), label)
                                     .clicked()
                                 {
-                                    app.selected_release_idx = Some(*i);
+                                    app.releases.selected_idx = Some(*i);
                                 }
                             }
                         });
@@ -143,7 +143,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(!app.releases_loading, egui::Button::new("Refresh")).clicked() {
+                if ui.add_enabled(!app.releases.loading, egui::Button::new("Refresh")).clicked() {
                     let branch = app.config.game.branch.clone();
                     app.fetch_releases_for_branch(&branch);
                 }
@@ -153,25 +153,25 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         // If branch changed, update selection and fetch if needed
         if app.config.game.branch != previous_branch {
             if !app.has_releases_for_branch(&app.config.game.branch) {
-                app.selected_release_idx = None;
+                app.releases.selected_idx = None;
                 let branch = app.config.game.branch.clone();
                 app.fetch_releases_for_branch(&branch);
             } else {
-                app.selected_release_idx = Some(0);
+                app.releases.selected_idx = Some(0);
             }
         }
 
         // Show error if any
-        if let Some(ref err) = app.releases_error {
+        if let Some(ref err) = app.releases.error {
             ui.add_space(8.0);
             ui.label(RichText::new(format!("Error: {}", err)).color(theme.error));
         }
 
         // Show rate limit warning if low
-        if app.rate_limit.is_low() {
+        if app.releases.rate_limit.is_low() {
             ui.add_space(4.0);
-            let remaining = app.rate_limit.remaining.unwrap_or(0);
-            let reset_mins = app.rate_limit.reset_in_minutes().unwrap_or(0);
+            let remaining = app.releases.rate_limit.remaining.unwrap_or(0);
+            let reset_mins = app.releases.rate_limit.reset_in_minutes().unwrap_or(0);
             let warning = format!(
                 "API limit: {} requests remaining (resets in {} min)",
                 remaining, reset_mins
@@ -180,7 +180,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         }
 
         // Update status indicator (only show when not updating)
-        if !app.is_updating() && app.selected_release_idx.is_some() {
+        if !app.is_updating() && app.releases.selected_idx.is_some() {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 if app.game_info.is_none() && app.config.game.directory.is_some() {
@@ -209,13 +209,13 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         }
 
         // Show update progress
-        if app.is_updating() || app.update_progress.phase == UpdatePhase::Complete || app.update_progress.phase == UpdatePhase::Failed {
+        if app.is_updating() || app.update.progress.phase == UpdatePhase::Complete || app.update.progress.phase == UpdatePhase::Failed {
             ui.add_space(12.0);
             render_update_progress(app, ui, &theme);
         }
 
         // Show update error
-        if let Some(ref err) = app.update_error {
+        if let Some(ref err) = app.update.error {
             ui.add_space(8.0);
             ui.label(RichText::new(format!("Error: {}", err)).color(theme.error));
         }
@@ -225,7 +225,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
     // Changelog section - use remaining vertical space
     let has_releases = !app.current_releases().is_empty();
-    if has_releases && app.selected_release_idx.is_some() {
+    if has_releases && app.releases.selected_idx.is_some() {
         // Calculate available height for changelog (leave room for buttons)
         let available_height = ui.available_height() - 70.0; // Reserve space for button row
 
@@ -240,7 +240,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                 ui.label(RichText::new("Changelog").color(theme.accent).size(13.0).strong());
                 ui.add_space(12.0);
 
-                if let Some(idx) = app.selected_release_idx {
+                if let Some(idx) = app.releases.selected_idx {
                     let releases = app.current_releases();
                     if let Some(release) = releases.get(idx) {
                         // Release date header
@@ -256,7 +256,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                 if let Some(ref text) = body {
                                     let processed = convert_urls_to_links(text);
                                     CommonMarkViewer::new()
-                                        .show(ui, &mut app.markdown_cache, &processed);
+                                        .show(ui, &mut app.ui.markdown_cache, &processed);
                                 } else {
                                     ui.label(RichText::new("No changelog available").color(theme.text_muted));
                                 }
@@ -281,7 +281,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         // - Same version or no release selected → Disabled
         let has_game = app.game_info.is_some();
         let has_directory = app.config.game.directory.is_some();
-        let has_release = app.selected_release_idx.is_some();
+        let has_release = app.releases.selected_idx.is_some();
 
         // Check if selected release is different from installed version
         let is_different_version = app.is_selected_release_different();
@@ -339,7 +339,7 @@ fn render_section_frame<F>(app: &mut PhoenixApp, ui: &mut egui::Ui, title: &str,
 where
     F: FnOnce(&mut PhoenixApp, &mut egui::Ui),
 {
-    let theme = app.current_theme.clone();
+    let theme = app.ui.current_theme.clone();
 
     egui::Frame::none()
         .fill(theme.bg_medium)
@@ -356,7 +356,7 @@ where
 
 /// Render update progress UI
 fn render_update_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
-    let progress = &app.update_progress;
+    let progress = &app.update.progress;
 
     egui::Frame::none()
         .fill(theme.bg_light.gamma_multiply(0.5))
