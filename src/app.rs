@@ -124,6 +124,10 @@ pub struct PhoenixApp {
     browser_download_url: Option<String>,
     /// Browser download repo soundpack
     browser_download_soundpack: Option<RepoSoundpack>,
+
+    // Dialogs
+    /// Whether to show the About dialog
+    show_about_dialog: bool,
 }
 
 /// Application tabs
@@ -232,6 +236,8 @@ impl PhoenixApp {
             soundpack_confirm_delete: false,
             browser_download_url: None,
             browser_download_soundpack: None,
+
+            show_about_dialog: false,
         };
 
         // Auto-fetch releases for current branch on startup
@@ -644,7 +650,8 @@ impl eframe::App for PhoenixApp {
                     });
                     ui.menu_button("Help", |ui| {
                         if ui.button("About").clicked() {
-                            // TODO: Show about dialog
+                            self.show_about_dialog = true;
+                            ui.close_menu();
                         }
                     });
                 });
@@ -682,6 +689,9 @@ impl eframe::App for PhoenixApp {
                     Tab::Settings => self.render_settings_tab(ui),
                 }
             });
+
+        // About dialog
+        self.render_about_dialog(ctx);
     }
 }
 
@@ -2263,6 +2273,12 @@ impl PhoenixApp {
     fn render_settings_tab(&mut self, ui: &mut egui::Ui) {
         let theme = self.current_theme.clone();
 
+        egui::ScrollArea::vertical()
+            .id_salt("settings_scroll")
+            .show(ui, |ui| {
+        // Use full available width
+        let available_width = ui.available_width();
+
         ui.label(RichText::new("Settings").color(theme.text_primary).size(20.0).strong());
         ui.add_space(16.0);
 
@@ -2273,6 +2289,7 @@ impl PhoenixApp {
             .inner_margin(16.0)
             .stroke(egui::Stroke::new(1.0, theme.border))
             .show(ui, |ui| {
+                ui.set_width(available_width - 32.0); // Account for frame margins
                 ui.label(RichText::new("Appearance").color(theme.accent).size(13.0).strong());
                 ui.add_space(12.0);
 
@@ -2334,6 +2351,7 @@ impl PhoenixApp {
             .inner_margin(16.0)
             .stroke(egui::Stroke::new(1.0, theme.border))
             .show(ui, |ui| {
+                ui.set_width(available_width - 32.0);
                 ui.label(RichText::new("Behavior").color(theme.accent).size(13.0).strong());
                 ui.add_space(12.0);
 
@@ -2355,6 +2373,7 @@ impl PhoenixApp {
             .inner_margin(16.0)
             .stroke(egui::Stroke::new(1.0, theme.border))
             .show(ui, |ui| {
+                ui.set_width(available_width - 32.0);
                 ui.label(RichText::new("Updates").color(theme.accent).size(13.0).strong());
                 ui.add_space(12.0);
 
@@ -2388,6 +2407,7 @@ impl PhoenixApp {
             .inner_margin(16.0)
             .stroke(egui::Stroke::new(1.0, theme.border))
             .show(ui, |ui| {
+                ui.set_width(available_width - 32.0);
                 ui.label(RichText::new("Backups").color(theme.accent).size(13.0).strong());
                 ui.add_space(12.0);
 
@@ -2456,6 +2476,7 @@ impl PhoenixApp {
             .inner_margin(16.0)
             .stroke(egui::Stroke::new(1.0, theme.border))
             .show(ui, |ui| {
+                ui.set_width(available_width - 32.0);
                 ui.label(RichText::new("Game").color(theme.accent).size(13.0).strong());
                 ui.add_space(12.0);
 
@@ -2467,6 +2488,7 @@ impl PhoenixApp {
                     self.save_config();
                 }
             });
+        }); // ScrollArea
     }
 
     /// Render update progress UI
@@ -2545,6 +2567,90 @@ impl PhoenixApp {
                     }
                     _ => {}
                 }
+            });
+    }
+
+    /// Render the About dialog
+    fn render_about_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_about_dialog {
+            return;
+        }
+
+        let theme = &self.current_theme;
+
+        egui::Window::new("About Phoenix")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([300.0, 280.0])
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(8.0);
+
+                    // App name
+                    ui.label(
+                        RichText::new("Phoenix")
+                            .size(24.0)
+                            .strong()
+                            .color(theme.accent)
+                    );
+
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("CDDA Game Launcher")
+                            .size(14.0)
+                            .color(theme.text_secondary)
+                    );
+
+                    ui.add_space(12.0);
+
+                    // Version
+                    ui.label(
+                        RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                            .color(theme.text_muted)
+                    );
+
+                    ui.add_space(12.0);
+
+                    // Description
+                    ui.label(
+                        RichText::new("A fast, native launcher for")
+                            .color(theme.text_secondary)
+                    );
+                    ui.label(
+                        RichText::new("Cataclysm: Dark Days Ahead")
+                            .color(theme.text_secondary)
+                    );
+
+                    ui.add_space(12.0);
+
+                    // Links (separate lines for proper centering)
+                    if ui.link("GitHub").clicked() {
+                        let _ = open::that("https://github.com/Vhari-Maven/phoenix");
+                    }
+                    ui.add_space(4.0);
+                    if ui.link("CDDA Website").clicked() {
+                        let _ = open::that("https://cataclysmdda.org/");
+                    }
+
+                    ui.add_space(12.0);
+
+                    // Built with
+                    ui.label(
+                        RichText::new("Built with Rust + egui")
+                            .size(11.0)
+                            .color(theme.text_muted)
+                    );
+
+                    ui.add_space(12.0);
+
+                    // Close button
+                    if ui.button("Close").clicked() {
+                        self.show_about_dialog = false;
+                    }
+
+                    ui.add_space(8.0);
+                });
             });
     }
 }

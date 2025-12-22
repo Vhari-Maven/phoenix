@@ -13,6 +13,13 @@ use anyhow::Result;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+#[cfg(windows)]
+use windows::Win32::Foundation::HANDLE;
+#[cfg(windows)]
+use windows::Win32::System::Threading::CreateMutexW;
+#[cfg(windows)]
+use windows::core::PCWSTR;
+
 /// Load the application icon from embedded PNG data
 fn load_icon() -> Option<egui::IconData> {
     let icon_data = include_bytes!("../assets/icon.png");
@@ -23,6 +30,36 @@ fn load_icon() -> Option<egui::IconData> {
         width,
         height,
     })
+}
+
+/// Single instance enforcement using a Windows named mutex.
+/// Returns a handle that must be kept alive for the duration of the app.
+#[cfg(windows)]
+fn acquire_single_instance() -> Option<HANDLE> {
+    use windows::Win32::Foundation::GetLastError;
+    use windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
+
+    // Create a unique mutex name for this application
+    let mutex_name: Vec<u16> = "Global\\PhoenixCDDALauncher\0"
+        .encode_utf16()
+        .collect();
+
+    unsafe {
+        let handle = CreateMutexW(None, false, PCWSTR(mutex_name.as_ptr())).ok()?;
+
+        // Check if another instance already owns this mutex
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            tracing::warn!("Another instance of Phoenix is already running");
+            return None;
+        }
+
+        Some(handle)
+    }
+}
+
+#[cfg(not(windows))]
+fn acquire_single_instance() -> Option<()> {
+    Some(()) // No-op on non-Windows platforms
 }
 
 #[tokio::main]
@@ -36,6 +73,30 @@ async fn main() -> Result<()> {
         .init();
 
     tracing::info!("Starting Phoenix launcher");
+
+    // Enforce single instance
+    let _instance_lock = match acquire_single_instance() {
+        Some(lock) => lock,
+        None => {
+            tracing::error!("Phoenix is already running. Exiting.");
+            // Show a message box on Windows
+            #[cfg(windows)]
+            {
+                use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK, MB_ICONINFORMATION};
+                let title: Vec<u16> = "Phoenix\0".encode_utf16().collect();
+                let msg: Vec<u16> = "Phoenix is already running.\0".encode_utf16().collect();
+                unsafe {
+                    MessageBoxW(
+                        None,
+                        PCWSTR(msg.as_ptr()),
+                        PCWSTR(title.as_ptr()),
+                        MB_OK | MB_ICONINFORMATION,
+                    );
+                }
+            }
+            return Ok(());
+        }
+    };
 
     // Load application icon
     let icon = load_icon().map(Arc::new);
@@ -55,6 +116,7 @@ async fn main() -> Result<()> {
 
     let native_options = eframe::NativeOptions {
         viewport,
+        persist_window: true, // Save/restore window size and position
         ..Default::default()
     };
 

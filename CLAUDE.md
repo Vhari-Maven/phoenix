@@ -89,8 +89,13 @@ See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
   - Delete with confirmation
   - Support for ZIP, RAR, 7z archives
   - Browser download fallback
+- Spiral 7: Polish (in progress)
+  - Window size/position persistence
+  - Single instance enforcement
+  - About dialog
+  - Settings UI improvements
 
-**Next:** Spiral 7 - Polish
+**Next:** Spiral 7 - remaining polish (error dialogs, testing)
 
 ## Key External APIs
 

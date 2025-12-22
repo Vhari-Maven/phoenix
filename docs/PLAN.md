@@ -272,20 +272,26 @@ src/
 
 ---
 
-### Spiral 7: Polish
+### Spiral 7: Polish (In Progress)
 **Goal:** Final refinements
 
 **Tasks:**
-- [ ] Save/restore window size and position
+- [x] Save/restore window size and position (eframe persist_window)
+- [x] Single instance enforcement (Windows named mutex)
+- [x] About dialog (Help menu, version info, links)
+- [x] Settings tab scrollbar and full-width layout
 - [ ] Error dialogs and user feedback
-- [ ] Single instance enforcement
-- [ ] About dialog
 - [ ] Performance optimization
 - [ ] Testing
+
+**Files modified:**
+- `src/main.rs` - single instance mutex, window persistence
+- `src/app.rs` - About dialog, Settings scroll/layout improvements
+- `Cargo.toml` - Win32_Security feature for mutex
 
 ---
 
 ## Current Status
 
 **Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅, Spiral 4 ✅, Spiral 5 ✅, Spiral 6 ✅
-**Next:** Spiral 7 - Polish
+**In Progress:** Spiral 7 - Polish
