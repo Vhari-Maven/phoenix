@@ -72,15 +72,13 @@ phoenix/
 ├── reference/           # Original Python source (gitignored)
 ├── src/
 │   ├── main.rs          # Entry point, logging setup, icon loading
-│   ├── app.rs           # Application state + UI (~2,700 lines - needs splitting)
-│   ├── ui/              # [PLANNED] Extracted UI modules
-│   │   ├── mod.rs       #   Exports, common helpers
-│   │   ├── main_tab.rs  #   Game section, launch button
-│   │   ├── update_tab.rs#   Branch selection, releases, changelog
-│   │   ├── backups_tab.rs#  Backup list, create/restore/delete
-│   │   ├── soundpacks_tab.rs# Two-column layout, install/delete
-│   │   ├── settings_tab.rs#  Appearance, behavior, game settings
-│   │   └── components.rs#   Shared dialogs, progress displays
+│   ├── app.rs           # Application state + coordination (~1,165 lines)
+│   ├── ui/              # Extracted UI modules
+│   │   ├── mod.rs       #   Module exports
+│   │   ├── main_tab.rs  #   Game info, updates, changelog (~502 lines)
+│   │   ├── backups_tab.rs#  Backup list, create/restore/delete (~417 lines)
+│   │   ├── soundpacks_tab.rs# Two-column layout, install/delete (~576 lines)
+│   │   └── settings_tab.rs#  Appearance, behavior, game settings (~323 lines)
 │   ├── backup.rs        # Save backup creation, restoration, auto-backup
 │   ├── config.rs        # Configuration management (TOML)
 │   ├── db.rs            # SQLite database for version caching
@@ -105,9 +103,7 @@ See [docs/REFACTOR.md](docs/REFACTOR.md) for the full refactoring plan.
 - Build warnings cleanup (27 warnings eliminated)
 - Executable icon embedding via build.rs
 - Console window hidden in release builds
-
-**In Progress:**
-- Phase 1: UI Module Extraction (splitting app.rs into ui/ modules)
+- Phase 1: UI Module Extraction (app.rs reduced from ~2,700 to ~1,165 lines)
 
 **Planned:**
 - Phase 2: Deduplication (format_size, progress rendering, async polling)

@@ -10,6 +10,7 @@ mod github;
 mod migration;
 mod soundpack;
 mod theme;
+mod ui;
 mod update;
 
 use anyhow::Result;

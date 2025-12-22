@@ -12,12 +12,16 @@ The Phoenix codebase has a solid foundation with clean service modules (`github.
 
 | File | Lines | Status |
 |------|-------|--------|
-| `app.rs` | ~2,700 | **Critical** - Monolithic, mixed UI + state |
+| `app.rs` | ~1,165 | **Improved** - State + coordination (was ~2,700) |
+| `ui/soundpacks_tab.rs` | ~576 | Good - Extracted from app.rs |
+| `ui/main_tab.rs` | ~502 | Good - Extracted from app.rs |
+| `ui/backups_tab.rs` | ~417 | Good - Extracted from app.rs |
+| `ui/settings_tab.rs` | ~323 | Good - Extracted from app.rs |
 | `soundpack.rs` | ~900 | Good |
 | `update.rs` | ~750 | Good |
 | `backup.rs` | ~750 | Good |
-| `game.rs` | ~550 | Good |
 | `migration.rs` | ~700 | Good |
+| `game.rs` | ~550 | Good |
 | `github.rs` | ~330 | Excellent |
 | `config.rs` | ~290 | Excellent |
 | `theme.rs` | ~270 | Excellent |
@@ -241,6 +245,50 @@ impl AppService {
 ---
 
 ## Completed Work
+
+### Phase 1: UI Module Extraction (Done)
+
+Extracted UI rendering from `app.rs` into separate modules:
+
+| Module | Lines | Contents |
+|--------|-------|----------|
+| `ui/main_tab.rs` | 502 | Game info, update section, changelog, action buttons |
+| `ui/soundpacks_tab.rs` | 576 | Two-column layout, install/delete, progress |
+| `ui/backups_tab.rs` | 417 | Backup list, create/restore/delete, confirmations |
+| `ui/settings_tab.rs` | 323 | Appearance, behavior, updates, game settings |
+| `ui/mod.rs` | 13 | Module exports |
+
+**Result:** `app.rs` reduced from ~2,700 to ~1,165 lines (57% reduction)
+
+**Design decisions:**
+- Used free functions `fn render_xxx(app: &mut PhoenixApp, ui: &mut egui::Ui)` instead of traits (simpler)
+- Combined update section into `main_tab.rs` (matches actual UI structure)
+- Left `render_tab()` and `render_about_dialog()` in app.rs (~120 lines, tightly coupled to eframe::App)
+
+**Ideas for further reduction (~1,165 → ~700 lines):**
+
+1. **Extract task polling to a helper** (~100 lines saved)
+   The `poll_*_task()` pattern repeats 4 times. Could create:
+   ```rust
+   // src/task.rs
+   pub fn poll_task<T, E>(task: &mut Option<JoinHandle<Result<T, E>>>) -> Option<Result<T, E>>
+   ```
+
+2. **Move poll methods to state structs** (~200 lines saved)
+   Group related state + polling into nested structs (Phase 3):
+   ```rust
+   pub struct ReleasesState { ... }
+   impl ReleasesState {
+       fn poll(&mut self, ctx: &egui::Context) { ... }
+   }
+   ```
+   This moves `poll_releases_task`, `poll_update_task`, `poll_backup_task`, `poll_soundpack_tasks` out of PhoenixApp.
+
+3. **Extract remaining UI helpers** (~120 lines saved)
+   Move `render_tab()` and `render_about_dialog()` to `ui/components.rs`
+
+4. **Simplify PhoenixApp::new()** (~50 lines saved)
+   Extract initialization into builder pattern or separate `init` module
 
 ### Build Warnings Cleanup (Done)
 
