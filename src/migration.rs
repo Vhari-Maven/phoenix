@@ -16,8 +16,6 @@ pub struct ModInfo {
     pub id: String,
     /// Path to the mod directory
     pub path: PathBuf,
-    /// Whether this mod is disabled (.disabled extension)
-    pub disabled: bool,
 }
 
 /// Represents a tileset with its name and path
@@ -27,8 +25,6 @@ pub struct TilesetInfo {
     pub name: String,
     /// Path to the tileset directory
     pub path: PathBuf,
-    /// Whether this tileset is disabled
-    pub disabled: bool,
 }
 
 /// Represents a soundpack with its name and path
@@ -38,8 +34,6 @@ pub struct SoundpackInfo {
     pub name: String,
     /// Path to the soundpack directory
     pub path: PathBuf,
-    /// Whether this soundpack is disabled
-    pub disabled: bool,
 }
 
 /// Result of analyzing directories for custom content
@@ -72,10 +66,10 @@ pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
     let json_file = mod_dir.join("modinfo.json");
     let disabled_file = mod_dir.join("modinfo.json.disabled");
 
-    let (file_path, disabled) = if json_file.exists() {
-        (json_file, false)
+    let file_path = if json_file.exists() {
+        json_file
     } else if disabled_file.exists() {
-        (disabled_file, true)
+        disabled_file
     } else {
         return None;
     };
@@ -90,7 +84,6 @@ pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
                 return Some(ModInfo {
                     id: id.to_string(),
                     path: mod_dir.to_path_buf(),
-                    disabled,
                 });
             }
         }
@@ -105,7 +98,6 @@ pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
                         return Some(ModInfo {
                             id: id.to_string(),
                             path: mod_dir.to_path_buf(),
-                            disabled,
                         });
                     }
                 }
@@ -119,14 +111,14 @@ pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
 /// Parse a tileset.txt or soundpack.txt file to extract the NAME field.
 ///
 /// Format: `NAME <name>` where name may contain spaces and commas are stripped.
-fn parse_asset_name(asset_dir: &Path, filename: &str) -> Option<(String, bool)> {
+fn parse_asset_name(asset_dir: &Path, filename: &str) -> Option<String> {
     let normal_file = asset_dir.join(filename);
     let disabled_file = asset_dir.join(format!("{}.disabled", filename));
 
-    let (file_path, disabled) = if normal_file.exists() {
-        (normal_file, false)
+    let file_path = if normal_file.exists() {
+        normal_file
     } else if disabled_file.exists() {
-        (disabled_file, true)
+        disabled_file
     } else {
         return None;
     };
@@ -141,7 +133,7 @@ fn parse_asset_name(asset_dir: &Path, filename: &str) -> Option<(String, bool)> 
             if let Some(space_idx) = line.find(' ') {
                 let name = line[space_idx..].trim().replace(',', "");
                 if !name.is_empty() {
-                    return Some((name, disabled));
+                    return Some(name);
                 }
             }
         }
@@ -152,21 +144,19 @@ fn parse_asset_name(asset_dir: &Path, filename: &str) -> Option<(String, bool)> 
 
 /// Parse tileset.txt to get tileset info
 pub fn parse_tileset_info(tileset_dir: &Path) -> Option<TilesetInfo> {
-    let (name, disabled) = parse_asset_name(tileset_dir, "tileset.txt")?;
+    let name = parse_asset_name(tileset_dir, "tileset.txt")?;
     Some(TilesetInfo {
         name,
         path: tileset_dir.to_path_buf(),
-        disabled,
     })
 }
 
 /// Parse soundpack.txt to get soundpack info
 pub fn parse_soundpack_info(soundpack_dir: &Path) -> Option<SoundpackInfo> {
-    let (name, disabled) = parse_asset_name(soundpack_dir, "soundpack.txt")?;
+    let name = parse_asset_name(soundpack_dir, "soundpack.txt")?;
     Some(SoundpackInfo {
         name,
         path: soundpack_dir.to_path_buf(),
-        disabled,
     })
 }
 
@@ -422,7 +412,6 @@ mod tests {
         assert!(result.is_some());
         let mod_info = result.unwrap();
         assert_eq!(mod_info.id, "test_mod_id");
-        assert!(!mod_info.disabled);
     }
 
     #[test]
@@ -452,7 +441,6 @@ mod tests {
         assert!(result.is_some());
         let mod_info = result.unwrap();
         assert_eq!(mod_info.id, "disabled_mod_id");
-        assert!(mod_info.disabled);
     }
 
     #[test]
@@ -519,7 +507,6 @@ mod tests {
         assert!(result.is_some());
         let info = result.unwrap();
         assert_eq!(info.name, "Disabled Tileset");
-        assert!(info.disabled);
     }
 
     #[test]
@@ -544,7 +531,6 @@ mod tests {
             ModInfo {
                 id: "official_mod".to_string(),
                 path: PathBuf::from("/old/official_mod"),
-                disabled: false,
             },
         );
         old_mods.insert(
@@ -552,7 +538,6 @@ mod tests {
             ModInfo {
                 id: "custom_mod".to_string(),
                 path: PathBuf::from("/old/custom_mod"),
-                disabled: false,
             },
         );
 
@@ -562,7 +547,6 @@ mod tests {
             ModInfo {
                 id: "official_mod".to_string(),
                 path: PathBuf::from("/new/official_mod"),
-                disabled: false,
             },
         );
 
@@ -580,7 +564,6 @@ mod tests {
             TilesetInfo {
                 name: "UltimateCataclysm".to_string(),
                 path: PathBuf::from("/old/gfx/UltiCa"),
-                disabled: false,
             },
         );
         old_tilesets.insert(
@@ -588,7 +571,6 @@ mod tests {
             TilesetInfo {
                 name: "MyCustomTileset".to_string(),
                 path: PathBuf::from("/old/gfx/MyCustom"),
-                disabled: false,
             },
         );
 
@@ -598,7 +580,6 @@ mod tests {
             TilesetInfo {
                 name: "UltimateCataclysm".to_string(),
                 path: PathBuf::from("/new/gfx/UltiCa"),
-                disabled: false,
             },
         );
 

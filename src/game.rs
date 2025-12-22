@@ -7,18 +7,11 @@ use crate::db::{Database, VersionInfo};
 /// Game executable names to look for
 const GAME_EXECUTABLES: &[&str] = &["cataclysm-tiles.exe", "cataclysm.exe"];
 
-/// Files that indicate a world/save exists
-const WORLD_FILES: &[&str] = &["worldoptions.json", "worldoptions.txt", "master.gsav"];
-
 /// Information about a detected game installation
 #[derive(Debug, Clone)]
 pub struct GameInfo {
-    /// Path to the game directory
-    pub directory: PathBuf,
     /// Path to the game executable
     pub executable: PathBuf,
-    /// SHA256 hash of the executable (for version detection)
-    pub sha256: String,
     /// Detected version info
     pub version_info: Option<VersionInfo>,
     /// Size of save directory in bytes
@@ -40,11 +33,6 @@ impl GameInfo {
             .as_ref()
             .is_some_and(|v| v.stable)
     }
-}
-
-/// Detect game installation in the given directory
-pub fn detect_game(directory: &Path) -> Result<Option<GameInfo>> {
-    detect_game_with_db(directory, None)
 }
 
 /// Detect game installation with optional database for version lookup
@@ -75,9 +63,7 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
         };
 
         return Ok(Some(GameInfo {
-            directory: directory.to_path_buf(),
             executable,
-            sha256: String::new(), // Not needed for experimental builds
             version_info: Some(version_info),
             saves_size,
         }));
@@ -89,7 +75,7 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
 
     // Look up version from database (for stable releases)
     let version_info = if let Some(db) = db {
-        match db.get_version(&sha256) {
+        match db.get_version(sha256.as_str()) {
             Ok(info) => info,
             Err(e) => {
                 tracing::warn!("Failed to look up version: {}", e);
@@ -109,9 +95,7 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
     };
 
     Ok(Some(GameInfo {
-        directory: directory.to_path_buf(),
         executable,
-        sha256,
         version_info,
         saves_size,
     }))
@@ -215,7 +199,6 @@ fn read_version_txt(directory: &Path) -> Option<VersionInfo> {
     Some(VersionInfo {
         version,
         stable: false,
-        build_number: None,
         released_on: build_number.or(commit_date), // Prefer full build number
     })
 }
@@ -246,30 +229,6 @@ pub fn calculate_dir_size(path: &Path) -> Result<u64> {
     }
 
     Ok(total)
-}
-
-/// Check if a directory contains world/save data
-pub fn has_saves(directory: &Path) -> bool {
-    let save_dir = directory.join("save");
-    if !save_dir.exists() {
-        return false;
-    }
-
-    // Look for world directories containing world files
-    if let Ok(entries) = std::fs::read_dir(&save_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                for world_file in WORLD_FILES {
-                    if path.join(world_file).exists() {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    false
 }
 
 /// Launch the game
@@ -399,7 +358,7 @@ mod tests {
         let temp_dir = std::env::temp_dir().join("phoenix_test_no_game");
         std::fs::create_dir_all(&temp_dir).unwrap();
 
-        let result = detect_game(&temp_dir).unwrap();
+        let result = detect_game_with_db(&temp_dir, None).unwrap();
         assert!(result.is_none());
 
         // Clean up
@@ -516,13 +475,10 @@ mod tests {
     #[test]
     fn test_game_info_version_display() {
         let info_with_version = GameInfo {
-            directory: PathBuf::from("C:\\test"),
             executable: PathBuf::from("C:\\test\\game.exe"),
-            sha256: "abc123".to_string(),
             version_info: Some(VersionInfo {
                 version: "0.F-3".to_string(),
                 stable: true,
-                build_number: None,
                 released_on: None,
             }),
             saves_size: 0,
@@ -532,9 +488,7 @@ mod tests {
         assert!(info_with_version.is_stable());
 
         let info_without_version = GameInfo {
-            directory: PathBuf::from("C:\\test"),
             executable: PathBuf::from("C:\\test\\game.exe"),
-            sha256: "abc123".to_string(),
             version_info: None,
             saves_size: 0,
         };
@@ -546,13 +500,10 @@ mod tests {
     #[test]
     fn test_game_info_experimental() {
         let info = GameInfo {
-            directory: PathBuf::from("C:\\test"),
             executable: PathBuf::from("C:\\test\\game.exe"),
-            sha256: "abc123".to_string(),
             version_info: Some(VersionInfo {
                 version: "abc1234".to_string(),
                 stable: false,
-                build_number: Some(12345),
                 released_on: Some("2024-01-15".to_string()),
             }),
             saves_size: 1024,

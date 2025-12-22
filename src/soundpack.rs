@@ -49,8 +49,6 @@ pub struct RepoSoundpack {
     pub homepage: String,
     /// Optional pre-known size in bytes
     pub size: Option<u64>,
-    /// Expected filename for browser downloads
-    pub expected_filename: Option<String>,
 }
 
 /// Current phase of soundpack operation
@@ -110,15 +108,6 @@ impl SoundpackProgress {
             self.files_extracted as f32 / self.total_files as f32
         }
     }
-
-    /// Get progress fraction for current phase
-    pub fn fraction(&self) -> f32 {
-        match self.phase {
-            SoundpackPhase::Downloading => self.download_fraction(),
-            SoundpackPhase::Extracting => self.extract_fraction(),
-            _ => 0.0,
-        }
-    }
 }
 
 /// Archive format for extraction
@@ -132,12 +121,6 @@ pub enum ArchiveFormat {
 /// Errors that can occur during soundpack operations
 #[derive(Error, Debug)]
 pub enum SoundpackError {
-    #[error("Game directory not set")]
-    NoGameDirectory,
-
-    #[error("Soundpacks directory not found: {0}")]
-    SoundpacksDirNotFound(PathBuf),
-
     #[error("Soundpack not found: {0}")]
     SoundpackNotFound(String),
 
@@ -556,7 +539,6 @@ pub async fn download_file(
     let mut downloaded: u64 = 0;
     let mut last_progress_time = Instant::now();
     let mut last_downloaded: u64 = 0;
-    let mut current_speed: u64 = 0;
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| SoundpackError::DownloadFailed(e.to_string()))?;
@@ -569,7 +551,7 @@ pub async fn download_file(
         let elapsed = now.duration_since(last_progress_time);
         if elapsed >= Duration::from_millis(100) {
             let bytes_since_last = downloaded - last_downloaded;
-            current_speed = (bytes_since_last as f64 / elapsed.as_secs_f64()) as u64;
+            let current_speed = (bytes_since_last as f64 / elapsed.as_secs_f64()) as u64;
 
             let _ = progress_tx.send(SoundpackProgress {
                 phase: SoundpackPhase::Downloading,
@@ -880,14 +862,12 @@ mod tests {
         progress.bytes_downloaded = 50;
         progress.total_bytes = 100;
         assert_eq!(progress.download_fraction(), 0.5);
-        assert_eq!(progress.fraction(), 0.5);
 
         // Extract progress
         progress.phase = SoundpackPhase::Extracting;
         progress.files_extracted = 25;
         progress.total_files = 100;
         assert_eq!(progress.extract_fraction(), 0.25);
-        assert_eq!(progress.fraction(), 0.25);
 
         // Zero total should return 0
         progress.total_bytes = 0;

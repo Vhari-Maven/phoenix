@@ -26,9 +26,6 @@ pub enum BackupError {
     #[error("Save directory not found: {0}")]
     SaveDirNotFound(PathBuf),
 
-    #[error("Backup directory not found: {0}")]
-    BackupDirNotFound(PathBuf),
-
     #[error("Backup not found: {0}")]
     BackupNotFound(String),
 
@@ -37,9 +34,6 @@ pub enum BackupError {
 
     #[error("Failed to create backup: {0}")]
     CreateFailed(String),
-
-    #[error("Failed to restore backup: {0}")]
-    RestoreFailed(String),
 
     #[error("No saves to backup")]
     NoSaves,
@@ -116,8 +110,6 @@ fn format_size(bytes: u64) -> String {
 /// Type of automatic backup
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutoBackupType {
-    BeforeLaunch,
-    AfterEnd,
     BeforeUpdate,
 }
 
@@ -125,8 +117,6 @@ impl AutoBackupType {
     /// Get the prefix used for automatic backup names
     pub fn prefix(&self) -> &'static str {
         match self {
-            Self::BeforeLaunch => "auto_before_launch",
-            Self::AfterEnd => "auto_after_end",
             Self::BeforeUpdate => "auto_before_update",
         }
     }
@@ -166,10 +156,7 @@ pub struct BackupProgress {
     pub phase: BackupPhase,
     pub files_processed: usize,
     pub total_files: usize,
-    pub bytes_processed: u64,
-    pub total_bytes: u64,
     pub current_file: String,
-    pub error: Option<String>,
 }
 
 impl BackupProgress {
@@ -370,7 +357,6 @@ fn create_backup_sync(
     });
 
     let mut files_to_backup: Vec<(PathBuf, String)> = Vec::new();
-    let mut total_bytes = 0u64;
 
     for entry in WalkDir::new(&save_dir).into_iter().filter_map(|e| e.ok()) {
         if entry.file_type().is_file() {
@@ -379,10 +365,6 @@ fn create_backup_sync(
                 .strip_prefix(game_dir)
                 .map_err(|e| BackupError::CreateFailed(e.to_string()))?;
             let relative_str = relative.to_string_lossy().replace('\\', "/");
-
-            if let Ok(metadata) = entry.metadata() {
-                total_bytes += metadata.len();
-            }
 
             files_to_backup.push((path, relative_str));
         }
@@ -398,7 +380,6 @@ fn create_backup_sync(
     let _ = progress_tx.send(BackupProgress {
         phase: BackupPhase::Compressing,
         total_files,
-        total_bytes,
         ..Default::default()
     });
 
@@ -416,26 +397,19 @@ fn create_backup_sync(
         .compression_method(compression)
         .compression_level(Some(compression_level.min(9) as i64));
 
-    let mut bytes_processed = 0u64;
-
     for (i, (path, relative)) in files_to_backup.iter().enumerate() {
         // Update progress
         let _ = progress_tx.send(BackupProgress {
             phase: BackupPhase::Compressing,
             files_processed: i,
             total_files,
-            bytes_processed,
-            total_bytes,
             current_file: relative.clone(),
-            error: None,
         });
 
         // Read file content
         let mut file_content = Vec::new();
         let mut file = File::open(path)?;
         file.read_to_end(&mut file_content)?;
-
-        bytes_processed += file_content.len() as u64;
 
         // Add to ZIP
         zip.start_file(relative, options)?;
@@ -449,10 +423,7 @@ fn create_backup_sync(
         phase: BackupPhase::Complete,
         files_processed: total_files,
         total_files,
-        bytes_processed: total_bytes,
-        total_bytes,
         current_file: String::new(),
-        error: None,
     });
 
     // Read back the info
@@ -635,15 +606,10 @@ pub async fn create_auto_backup(
     let backup_path = backup_dir(game_dir);
     fs::create_dir_all(&backup_path)?;
 
-    let base_name = match backup_type {
-        AutoBackupType::BeforeUpdate => {
-            if let Some(tag) = version_tag {
-                format!("{}_{}", backup_type.prefix(), tag.replace(['/', '\\', ':'], "_"))
-            } else {
-                backup_type.prefix().to_string()
-            }
-        }
-        _ => backup_type.prefix().to_string(),
+    let base_name = if let Some(tag) = version_tag {
+        format!("{}_{}", backup_type.prefix(), tag.replace(['/', '\\', ':'], "_"))
+    } else {
+        backup_type.prefix().to_string()
     };
 
     let name = generate_unique_name(&backup_path, &base_name);
@@ -733,8 +699,6 @@ mod tests {
 
     #[test]
     fn test_auto_backup_type_prefix() {
-        assert_eq!(AutoBackupType::BeforeLaunch.prefix(), "auto_before_launch");
-        assert_eq!(AutoBackupType::AfterEnd.prefix(), "auto_after_end");
         assert_eq!(AutoBackupType::BeforeUpdate.prefix(), "auto_before_update");
     }
 
