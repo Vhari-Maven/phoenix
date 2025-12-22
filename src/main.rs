@@ -13,6 +13,7 @@ mod task;
 mod theme;
 mod ui;
 mod update;
+mod util;
 
 use anyhow::Result;
 use std::sync::Arc;

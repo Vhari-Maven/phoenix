@@ -260,55 +260,10 @@ pub fn launch_game(executable: &Path, params: &str) -> Result<()> {
     Ok(())
 }
 
-/// Format byte size to human-readable string
-pub fn format_size(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[0])
-    } else {
-        format!("{:.2} {}", size, UNITS[unit_index])
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
-
-    #[test]
-    fn test_format_size_bytes() {
-        assert_eq!(format_size(0), "0 B");
-        assert_eq!(format_size(1), "1 B");
-        assert_eq!(format_size(512), "512 B");
-        assert_eq!(format_size(1023), "1023 B");
-    }
-
-    #[test]
-    fn test_format_size_kibibytes() {
-        assert_eq!(format_size(1024), "1.00 KiB");
-        assert_eq!(format_size(1536), "1.50 KiB");
-        assert_eq!(format_size(10240), "10.00 KiB");
-    }
-
-    #[test]
-    fn test_format_size_mebibytes() {
-        assert_eq!(format_size(1024 * 1024), "1.00 MiB");
-        assert_eq!(format_size(150 * 1024 * 1024), "150.00 MiB"); // 150 MB warning threshold
-    }
-
-    #[test]
-    fn test_format_size_gibibytes() {
-        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GiB");
-        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GiB");
-    }
 
     #[test]
     fn test_calculate_sha256() {

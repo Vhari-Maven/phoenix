@@ -4,9 +4,9 @@ use eframe::egui::{self, RichText, Vec2};
 use egui_commonmark::CommonMarkViewer;
 
 use crate::app::PhoenixApp;
-use crate::game;
 use crate::theme::Theme;
 use crate::update::UpdatePhase;
+use crate::util::format_size;
 
 /// Render the main tab content
 pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
@@ -68,7 +68,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         // Right column - saves
                         ui.vertical(|ui| {
                             ui.label(RichText::new("Saves").color(theme.text_muted).size(11.0));
-                            ui.label(RichText::new(game::format_size(info.saves_size)).color(theme.text_primary));
+                            ui.label(RichText::new(format_size(info.saves_size)).color(theme.text_primary));
                         });
                     });
                 });
@@ -431,23 +431,6 @@ fn render_update_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
                 _ => {}
             }
         });
-}
-
-/// Format bytes as human-readable size
-pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
 }
 
 /// Convert raw URLs in text to markdown links

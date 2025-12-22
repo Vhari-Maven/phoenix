@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::app::PhoenixApp;
 use crate::soundpack::{self, SoundpackError, SoundpackPhase};
 use crate::theme::Theme;
+use crate::util::format_size;
 
 /// Render the soundpacks tab
 pub fn render_soundpacks_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
@@ -327,7 +328,7 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Size:").color(theme.text_muted));
                         ui.label(
-                            RichText::new(soundpack::format_size(soundpack.size))
+                            RichText::new(format_size(soundpack.size))
                                 .color(theme.text_primary),
                         );
                     });
@@ -360,7 +361,7 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Size:").color(theme.text_muted));
                             ui.label(
-                                RichText::new(soundpack::format_size(size)).color(theme.text_primary),
+                                RichText::new(format_size(size)).color(theme.text_primary),
                             );
                         });
                     }
@@ -407,9 +408,9 @@ fn render_soundpack_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme)
                         egui::ProgressBar::new(fraction)
                             .text(format!(
                                 "{} / {} ({}/s)",
-                                soundpack::format_size(progress.bytes_downloaded),
-                                soundpack::format_size(progress.total_bytes),
-                                soundpack::format_size(progress.speed)
+                                format_size(progress.bytes_downloaded),
+                                format_size(progress.total_bytes),
+                                format_size(progress.speed)
                             ))
                             .fill(theme.accent),
                     );

@@ -44,11 +44,12 @@ Each state struct would own its `poll()` method, moving ~200 lines out of `app.r
 | `ui/settings_tab.rs` | ~323 | Extracted |
 | `ui/components.rs` | ~135 | New - shared UI components |
 | `task.rs` | ~58 | New - task polling helper |
-| `soundpack.rs` | ~900 | Good |
+| `util.rs` | ~58 | New - shared utilities |
+| `soundpack.rs` | ~885 | Good (was ~900) |
 | `update.rs` | ~750 | Good |
 | `backup.rs` | ~750 | Good |
 | `migration.rs` | ~700 | Good |
-| `game.rs` | ~550 | Good |
+| `game.rs` | ~515 | Good (was ~550) |
 | `github.rs` | ~330 | Excellent |
 | `config.rs` | ~290 | Excellent |
 | `theme.rs` | ~270 | Excellent |
@@ -62,6 +63,7 @@ src/
 ├── main.rs              # Entry point
 ├── app.rs               # PhoenixApp state + eframe::App impl (~988 lines)
 ├── task.rs              # Generic task polling helper
+├── util.rs              # Shared utilities (format_size)
 ├── ui/                  # Extracted UI modules
 │   ├── mod.rs
 │   ├── components.rs    # Shared UI components (tabs, dialogs)
@@ -124,13 +126,27 @@ Extracted remaining UI helpers and created task polling abstraction:
 - Created `PollResult` enum to encapsulate task polling states (NoTask, Pending, Complete)
 - Refactored all 4 poll functions to use the new helper, reducing boilerplate
 
+### Phase 2: format_size() Deduplication (Done)
+
+Consolidated 4 copies of `format_size()` into `src/util.rs`:
+
+| Location | Action |
+|----------|--------|
+| `game.rs` | Removed (18 lines + 4 tests) |
+| `backup.rs` | Removed (16 lines + 1 test), now imports from util |
+| `soundpack.rs` | Removed (15 lines + 1 test) |
+| `ui/main_tab.rs` | Removed (15 lines) |
+| `util.rs` | Created (58 lines with tests) |
+
+**Result:** Net reduction of ~6 lines, eliminated code duplication, unified formatting style (1 decimal, KB/MB/GB labels)
+
 ---
 
 ## Future Work
 
-### Phase 2: Deduplication
+### Phase 2: Deduplication (Partial)
 
-- **format_size()** - Duplicated in `backup.rs`, `soundpack.rs`, `game.rs`
+- ~~**format_size()** - Duplicated in `backup.rs`, `soundpack.rs`, `game.rs`~~ Done
 - **Progress rendering** - Similar patterns for update/backup/soundpack progress
 
 ### Phase 3: State Organization
