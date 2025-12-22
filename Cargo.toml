@@ -26,6 +26,14 @@ toml = "0.8"
 
 # Archives
 zip = "2"
+sevenz-rust = "0.6"
+unrar = "0.5"
+
+# Browser
+open = "5"
+
+# Temp files
+tempfile = "3"
 
 # Logging
 tracing = "0.1"
@@ -59,7 +67,6 @@ windows = { version = "0.58", features = [
 ] }
 
 [dev-dependencies]
-tempfile = "3"
 
 [profile.release]
 lto = true

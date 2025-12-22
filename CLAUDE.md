@@ -24,9 +24,10 @@ The original Python launcher source (v1.7.12) is in `reference/` (gitignored). U
 - **HTTP:** reqwest
 - **Serialization:** serde, serde_json, toml
 - **Database:** rusqlite (SQLite)
-- **Archives:** zip crate
+- **Archives:** zip, sevenz-rust, unrar crates (ZIP, 7z, RAR)
 - **Images:** image crate (icon loading)
 - **File ops:** remove_dir_all crate (fast directory deletion)
+- **Browser:** open crate (open URLs in default browser)
 - **Windows APIs:** windows crate
 
 ## Build & Run
@@ -42,7 +43,8 @@ cargo run
 phoenix/
 ├── assets/
 │   ├── icon.svg         # Phoenix flame icon source
-│   └── icon.png         # Embedded window icon
+│   ├── icon.png         # Embedded window icon
+│   └── soundpacks.json  # Embedded soundpack repository
 ├── docs/
 │   ├── PLAN.md          # Development roadmap
 │   └── ANALYSIS.md      # Original launcher analysis
@@ -56,6 +58,7 @@ phoenix/
 │   ├── game.rs          # Game detection and launching
 │   ├── github.rs        # GitHub API client, release fetching
 │   ├── migration.rs     # Smart migration for updates (identity-based content detection)
+│   ├── soundpack.rs     # Soundpack management (download, install, enable/disable)
 │   ├── theme.rs         # Theme system with color presets
 │   └── update.rs        # Download, extract, backup, restore logic
 ├── Cargo.toml
@@ -79,8 +82,15 @@ See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
   - Backup list with 7-column metadata display
   - Restore with optional pre-restore backup
   - Configurable retention and compression
+- Spiral 6: Soundpacks - full soundpack management
+  - Two-column UI (installed vs repository)
+  - Download and install from embedded repository
+  - Enable/disable soundpacks
+  - Delete with confirmation
+  - Support for ZIP, RAR, 7z archives
+  - Browser download fallback
 
-**Next:** Spiral 6 - Soundpacks
+**Next:** Spiral 7 - Polish
 
 ## Key External APIs
 

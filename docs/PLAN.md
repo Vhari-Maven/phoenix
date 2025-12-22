@@ -247,18 +247,28 @@ src/
 
 ---
 
-### Spiral 6: Soundpacks
+### Spiral 6: Soundpacks ✅ COMPLETE
 **Goal:** Manage soundpack installation
 
 **Tasks:**
-- [ ] List installed soundpacks
-- [ ] Fetch available soundpacks from repository
-- [ ] Download and install soundpacks
-- [ ] Remove soundpacks
+- [x] List installed soundpacks (with metadata: name, view name, size, enabled status)
+- [x] Enable/disable soundpacks (via soundpack.txt rename)
+- [x] Load embedded repository of available soundpacks (7 soundpacks from original launcher)
+- [x] Download and install soundpacks with progress tracking
+- [x] Extract archives (ZIP, RAR, 7z formats)
+- [x] Delete soundpacks with confirmation dialog
+- [x] Browser download fallback for protected sources
+- [x] Details panel showing soundpack information
+- [x] Clickable homepage links
 
-**Files to modify:**
-- `src/ui/soundpacks_tab.rs` - new file
-- `src/services/soundpacks.rs` - new file
+**Files modified:**
+- `src/soundpack.rs` - new module with scanning, download, extract, install, enable/disable, delete
+- `src/app.rs` - soundpack state, Soundpacks tab UI with two-column layout (installed/repository)
+- `src/main.rs` - added soundpack module
+- `assets/soundpacks.json` - embedded repository data
+- `Cargo.toml` - added sevenz-rust, unrar, open, tempfile crates
+
+**Rust concepts:** Archive extraction with multiple formats, embedded JSON resources, async file operations, modal dialogs, progress channels
 
 ---
 
@@ -277,5 +287,5 @@ src/
 
 ## Current Status
 
-**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅, Spiral 4 ✅, Spiral 5 ✅
-**Next:** Spiral 6 - Soundpacks
+**Completed:** Spiral 1 ✅, Spiral 2 ✅, Spiral 3 ✅, Spiral 3.5 ✅, Spiral 4 ✅, Spiral 5 ✅, Spiral 6 ✅
+**Next:** Spiral 7 - Polish

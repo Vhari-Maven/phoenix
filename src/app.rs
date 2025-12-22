@@ -12,6 +12,9 @@ use crate::config::Config;
 use crate::db::Database;
 use crate::game::{self, GameInfo};
 use crate::github::{FetchResult, GitHubClient, RateLimitInfo, Release};
+use crate::soundpack::{
+    self, InstalledSoundpack, RepoSoundpack, SoundpackError, SoundpackPhase, SoundpackProgress,
+};
 use crate::theme::{Theme, ThemePreset};
 use crate::update::{self, UpdatePhase, UpdateProgress};
 
@@ -93,6 +96,34 @@ pub struct PhoenixApp {
     backup_confirm_delete: bool,
     /// Whether to show restore confirmation
     backup_confirm_restore: bool,
+
+    // Soundpack state
+    /// List of installed soundpacks
+    soundpack_list: Vec<InstalledSoundpack>,
+    /// Whether soundpack list is being loaded
+    soundpack_list_loading: bool,
+    /// Index of selected installed soundpack
+    soundpack_installed_idx: Option<usize>,
+    /// Index of selected repository soundpack
+    soundpack_repo_idx: Option<usize>,
+    /// Repository soundpacks
+    soundpack_repository: Vec<RepoSoundpack>,
+    /// Async task for soundpack install/delete operations
+    soundpack_task: Option<JoinHandle<Result<InstalledSoundpack, SoundpackError>>>,
+    /// Async task for loading soundpack list
+    soundpack_list_task: Option<JoinHandle<Result<Vec<InstalledSoundpack>, SoundpackError>>>,
+    /// Channel receiver for soundpack progress
+    soundpack_progress_rx: Option<watch::Receiver<SoundpackProgress>>,
+    /// Current soundpack progress
+    soundpack_progress: SoundpackProgress,
+    /// Error message from last soundpack operation
+    soundpack_error: Option<String>,
+    /// Whether to show delete confirmation
+    soundpack_confirm_delete: bool,
+    /// Browser download state
+    browser_download_url: Option<String>,
+    /// Browser download repo soundpack
+    browser_download_soundpack: Option<RepoSoundpack>,
 }
 
 /// Application tabs
@@ -188,6 +219,19 @@ impl PhoenixApp {
             backup_error: None,
             backup_confirm_delete: false,
             backup_confirm_restore: false,
+            soundpack_list: Vec::new(),
+            soundpack_list_loading: false,
+            soundpack_installed_idx: None,
+            soundpack_repo_idx: None,
+            soundpack_repository: soundpack::load_repository(),
+            soundpack_task: None,
+            soundpack_list_task: None,
+            soundpack_progress_rx: None,
+            soundpack_progress: SoundpackProgress::default(),
+            soundpack_error: None,
+            soundpack_confirm_delete: false,
+            browser_download_url: None,
+            browser_download_soundpack: None,
         };
 
         // Auto-fetch releases for current branch on startup
@@ -584,6 +628,7 @@ impl eframe::App for PhoenixApp {
         self.poll_releases_task(ctx);
         self.poll_update_task(ctx);
         self.poll_backup_task(ctx);
+        self.poll_soundpack_tasks(ctx);
 
         let theme = &self.current_theme;
 
@@ -671,6 +716,15 @@ impl PhoenixApp {
                 if let Some(ref dir) = self.config.game.directory {
                     if self.backup_list.is_empty() && !self.backup_list_loading {
                         self.refresh_backup_list(&PathBuf::from(dir));
+                    }
+                }
+            }
+
+            // Load soundpack list when switching to Soundpacks tab
+            if tab == Tab::Soundpacks && previous_tab != Tab::Soundpacks {
+                if let Some(ref dir) = self.config.game.directory {
+                    if self.soundpack_list.is_empty() && !self.soundpack_list_loading {
+                        self.refresh_soundpack_list(&PathBuf::from(dir));
                     }
                 }
             }
@@ -1508,10 +1562,701 @@ impl PhoenixApp {
 
     /// Render the soundpacks tab
     fn render_soundpacks_tab(&mut self, ui: &mut egui::Ui) {
-        let theme = &self.current_theme;
-        ui.label(RichText::new("Soundpacks").color(theme.text_primary).size(20.0).strong());
-        ui.add_space(8.0);
-        ui.label(RichText::new("Soundpack management coming in a future update.").color(theme.text_muted));
+        let theme = self.current_theme.clone();
+
+        ui.label(
+            RichText::new("Soundpacks")
+                .color(theme.text_primary)
+                .size(20.0)
+                .strong(),
+        );
+        ui.add_space(16.0);
+
+        // Check if game directory is set
+        let game_dir = match &self.config.game.directory {
+            Some(dir) => PathBuf::from(dir),
+            None => {
+                ui.label(
+                    RichText::new("Set a game directory in the Main tab to manage soundpacks.")
+                        .color(theme.text_muted),
+                );
+                return;
+            }
+        };
+
+        let is_busy = self.soundpack_task.is_some() || self.soundpack_list_loading;
+
+        // Two-column layout using columns
+        ui.columns(2, |columns| {
+            // Left column: Installed soundpacks
+            self.render_installed_soundpacks_panel(&mut columns[0], &theme, &game_dir, is_busy);
+
+            // Right column: Repository soundpacks
+            self.render_repository_soundpacks_panel(&mut columns[1], &theme, &game_dir, is_busy);
+        });
+
+        ui.add_space(12.0);
+
+        // Details panel
+        self.render_soundpack_details_panel(ui, &theme);
+
+        // Progress section
+        if is_busy
+            || self.soundpack_progress.phase == SoundpackPhase::Complete
+            || self.soundpack_progress.phase == SoundpackPhase::Failed
+        {
+            ui.add_space(12.0);
+            self.render_soundpack_progress(ui, &theme);
+        }
+
+        // Delete confirmation dialog
+        if self.soundpack_confirm_delete {
+            self.render_soundpack_delete_dialog(ui, &theme, &game_dir);
+        }
+
+        // Browser download dialog
+        if self.browser_download_url.is_some() {
+            self.render_browser_download_dialog(ui, &theme, &game_dir);
+        }
+
+        // Error display
+        if let Some(ref err) = self.soundpack_error {
+            ui.add_space(8.0);
+            ui.label(RichText::new(format!("Error: {}", err)).color(theme.error));
+        }
+    }
+
+    /// Render the installed soundpacks panel
+    fn render_installed_soundpacks_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        game_dir: &Path,
+        is_busy: bool,
+    ) {
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(12.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Installed")
+                            .color(theme.accent)
+                            .size(13.0)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add_enabled(
+                                !is_busy,
+                                egui::Button::new(
+                                    RichText::new("⟳").color(theme.text_secondary).size(14.0),
+                                ),
+                            )
+                            .on_hover_text("Refresh list")
+                            .clicked()
+                        {
+                            self.refresh_soundpack_list(game_dir);
+                        }
+                    });
+                });
+
+                ui.add_space(8.0);
+
+                // Soundpack list
+                egui::ScrollArea::vertical()
+                    .id_salt("installed_soundpacks")
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        if self.soundpack_list.is_empty() && !self.soundpack_list_loading {
+                            ui.label(
+                                RichText::new("No soundpacks installed")
+                                    .color(theme.text_muted)
+                                    .italics(),
+                            );
+                        } else {
+                            for (idx, soundpack) in self.soundpack_list.iter().enumerate() {
+                                let is_selected = self.soundpack_installed_idx == Some(idx);
+                                let display_name = if soundpack.enabled {
+                                    soundpack.view_name.clone()
+                                } else {
+                                    format!("{} (Disabled)", soundpack.view_name)
+                                };
+
+                                let text_color = if soundpack.enabled {
+                                    theme.text_primary
+                                } else {
+                                    theme.text_muted
+                                };
+
+                                let response = ui.selectable_label(
+                                    is_selected,
+                                    RichText::new(&display_name).color(text_color),
+                                );
+
+                                if response.clicked() {
+                                    self.soundpack_installed_idx = Some(idx);
+                                    self.soundpack_repo_idx = None;
+                                }
+                            }
+                        }
+                    });
+
+                ui.add_space(8.0);
+
+                // Action buttons
+                ui.horizontal(|ui| {
+                    let has_selection = self.soundpack_installed_idx.is_some();
+                    let selected_enabled = self
+                        .soundpack_installed_idx
+                        .and_then(|i| self.soundpack_list.get(i))
+                        .map(|s| s.enabled)
+                        .unwrap_or(false);
+
+                    let toggle_text = if selected_enabled { "Disable" } else { "Enable" };
+
+                    if ui
+                        .add_enabled(
+                            has_selection && !is_busy,
+                            egui::Button::new(RichText::new(toggle_text).color(theme.text_primary)),
+                        )
+                        .clicked()
+                    {
+                        if let Some(idx) = self.soundpack_installed_idx {
+                            if let Some(soundpack) = self.soundpack_list.get(idx) {
+                                let path = soundpack.path.clone();
+                                let new_enabled = !soundpack.enabled;
+                                let game_dir = game_dir.to_path_buf();
+
+                                tokio::spawn(async move {
+                                    if let Err(e) =
+                                        soundpack::set_soundpack_enabled(&path, new_enabled).await
+                                    {
+                                        tracing::error!("Failed to toggle soundpack: {}", e);
+                                    }
+                                });
+
+                                // Refresh the list after a short delay
+                                self.refresh_soundpack_list(&game_dir);
+                            }
+                        }
+                    }
+
+                    if ui
+                        .add_enabled(
+                            has_selection && !is_busy,
+                            egui::Button::new(RichText::new("Delete").color(theme.error)),
+                        )
+                        .clicked()
+                    {
+                        self.soundpack_confirm_delete = true;
+                    }
+                });
+            });
+    }
+
+    /// Render the repository soundpacks panel
+    fn render_repository_soundpacks_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        game_dir: &Path,
+        is_busy: bool,
+    ) {
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(12.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new("Repository")
+                        .color(theme.accent)
+                        .size(13.0)
+                        .strong(),
+                );
+                ui.add_space(8.0);
+
+                // Repository list
+                egui::ScrollArea::vertical()
+                    .id_salt("repository_soundpacks")
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        for (idx, repo_soundpack) in self.soundpack_repository.iter().enumerate() {
+                            let is_selected = self.soundpack_repo_idx == Some(idx);
+                            let is_installed =
+                                soundpack::is_soundpack_installed(&self.soundpack_list, &repo_soundpack.name);
+
+                            let display_name = if is_installed {
+                                format!("{} ✓", repo_soundpack.viewname)
+                            } else {
+                                repo_soundpack.viewname.clone()
+                            };
+
+                            let text_color = if is_installed {
+                                theme.success
+                            } else {
+                                theme.text_primary
+                            };
+
+                            let response = ui.selectable_label(
+                                is_selected,
+                                RichText::new(&display_name).color(text_color),
+                            );
+
+                            if response.clicked() {
+                                self.soundpack_repo_idx = Some(idx);
+                                self.soundpack_installed_idx = None;
+                            }
+                        }
+                    });
+
+                ui.add_space(8.0);
+
+                // Install button
+                ui.horizontal(|ui| {
+                    let has_selection = self.soundpack_repo_idx.is_some();
+                    let selected_installed = self
+                        .soundpack_repo_idx
+                        .and_then(|i| self.soundpack_repository.get(i))
+                        .map(|r| soundpack::is_soundpack_installed(&self.soundpack_list, &r.name))
+                        .unwrap_or(false);
+
+                    if ui
+                        .add_enabled(
+                            has_selection && !is_busy && !selected_installed,
+                            egui::Button::new(
+                                RichText::new("Install Selected").color(theme.text_primary),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        if let Some(idx) = self.soundpack_repo_idx {
+                            if let Some(repo_soundpack) = self.soundpack_repository.get(idx) {
+                                self.install_soundpack(repo_soundpack.clone(), game_dir);
+                            }
+                        }
+                    }
+                });
+            });
+    }
+
+    /// Render the soundpack details panel
+    fn render_soundpack_details_panel(&self, ui: &mut egui::Ui, theme: &Theme) {
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(12.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new("Details")
+                        .color(theme.accent)
+                        .size(13.0)
+                        .strong(),
+                );
+                ui.add_space(8.0);
+
+                // Show details for selected soundpack
+                if let Some(idx) = self.soundpack_installed_idx {
+                    if let Some(soundpack) = self.soundpack_list.get(idx) {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("View name:").color(theme.text_muted));
+                            ui.label(RichText::new(&soundpack.view_name).color(theme.text_primary));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Name:").color(theme.text_muted));
+                            ui.label(RichText::new(&soundpack.name).color(theme.text_primary));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Path:").color(theme.text_muted));
+                            ui.label(
+                                RichText::new(soundpack.path.display().to_string())
+                                    .color(theme.text_secondary),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Size:").color(theme.text_muted));
+                            ui.label(
+                                RichText::new(soundpack::format_size(soundpack.size))
+                                    .color(theme.text_primary),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Status:").color(theme.text_muted));
+                            let status = if soundpack.enabled { "Enabled" } else { "Disabled" };
+                            let color = if soundpack.enabled {
+                                theme.success
+                            } else {
+                                theme.text_muted
+                            };
+                            ui.label(RichText::new(status).color(color));
+                        });
+                    }
+                } else if let Some(idx) = self.soundpack_repo_idx {
+                    if let Some(repo) = self.soundpack_repository.get(idx) {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("View name:").color(theme.text_muted));
+                            ui.label(RichText::new(&repo.viewname).color(theme.text_primary));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Name:").color(theme.text_muted));
+                            ui.label(RichText::new(&repo.name).color(theme.text_primary));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("URL:").color(theme.text_muted));
+                            ui.label(
+                                RichText::new(&repo.url).color(theme.text_secondary),
+                            );
+                        });
+                        if let Some(size) = repo.size {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Size:").color(theme.text_muted));
+                                ui.label(
+                                    RichText::new(soundpack::format_size(size))
+                                        .color(theme.text_primary),
+                                );
+                            });
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Homepage:").color(theme.text_muted));
+                            if ui.link(&repo.homepage).clicked() {
+                                let _ = open::that(&repo.homepage);
+                            }
+                        });
+                    }
+                } else {
+                    ui.label(
+                        RichText::new("Select a soundpack to view details")
+                            .color(theme.text_muted)
+                            .italics(),
+                    );
+                }
+            });
+    }
+
+    /// Render soundpack progress
+    fn render_soundpack_progress(&self, ui: &mut egui::Ui, theme: &Theme) {
+        let progress = &self.soundpack_progress;
+
+        egui::Frame::none()
+            .fill(theme.bg_medium)
+            .rounding(8.0)
+            .inner_margin(12.0)
+            .stroke(egui::Stroke::new(1.0, theme.border))
+            .show(ui, |ui| {
+                let status_color = match progress.phase {
+                    SoundpackPhase::Complete => theme.success,
+                    SoundpackPhase::Failed => theme.error,
+                    _ => theme.text_primary,
+                };
+
+                ui.label(RichText::new(progress.phase.description()).color(status_color));
+
+                match progress.phase {
+                    SoundpackPhase::Downloading => {
+                        ui.add_space(4.0);
+                        let fraction = progress.download_fraction();
+                        ui.add(
+                            egui::ProgressBar::new(fraction)
+                                .text(format!(
+                                    "{} / {} ({}/s)",
+                                    soundpack::format_size(progress.bytes_downloaded),
+                                    soundpack::format_size(progress.total_bytes),
+                                    soundpack::format_size(progress.speed)
+                                ))
+                                .fill(theme.accent),
+                        );
+                    }
+                    SoundpackPhase::Extracting => {
+                        ui.add_space(4.0);
+                        if progress.total_files > 0 {
+                            let fraction = progress.extract_fraction();
+                            ui.add(
+                                egui::ProgressBar::new(fraction)
+                                    .text(format!(
+                                        "{} / {} files",
+                                        progress.files_extracted, progress.total_files
+                                    ))
+                                    .fill(theme.accent),
+                            );
+                        } else {
+                            ui.add(egui::ProgressBar::new(0.5).text("Extracting...").fill(theme.accent));
+                        }
+                        if !progress.current_file.is_empty() {
+                            ui.label(
+                                RichText::new(&progress.current_file)
+                                    .color(theme.text_muted)
+                                    .small(),
+                            );
+                        }
+                    }
+                    SoundpackPhase::Complete => {
+                        ui.label(
+                            RichText::new("Soundpack installed successfully!")
+                                .color(theme.success),
+                        );
+                    }
+                    SoundpackPhase::Failed => {
+                        if let Some(ref err) = progress.error {
+                            ui.label(RichText::new(err).color(theme.error));
+                        }
+                    }
+                    _ => {}
+                }
+            });
+    }
+
+    /// Render delete confirmation dialog
+    fn render_soundpack_delete_dialog(&mut self, ui: &mut egui::Ui, theme: &Theme, game_dir: &Path) {
+        let selected_name = self
+            .soundpack_installed_idx
+            .and_then(|i| self.soundpack_list.get(i))
+            .map(|s| s.view_name.clone())
+            .unwrap_or_default();
+
+        egui::Window::new("Confirm Delete")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.label(format!(
+                    "Are you sure you want to delete '{}'?",
+                    selected_name
+                ));
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("This action cannot be undone.")
+                        .color(theme.warning)
+                        .small(),
+                );
+                ui.add_space(12.0);
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(RichText::new("Delete").color(theme.error))
+                        .clicked()
+                    {
+                        if let Some(idx) = self.soundpack_installed_idx {
+                            if let Some(soundpack) = self.soundpack_list.get(idx) {
+                                let path = soundpack.path.clone();
+                                let game_dir = game_dir.to_path_buf();
+
+                                let task = tokio::spawn(async move {
+                                    soundpack::delete_soundpack(path).await?;
+                                    // Return a dummy InstalledSoundpack to satisfy the type
+                                    Err(SoundpackError::Cancelled) // Will be handled specially
+                                });
+
+                                self.soundpack_task = Some(task);
+                                self.soundpack_installed_idx = None;
+
+                                // Schedule list refresh
+                                self.refresh_soundpack_list(&game_dir);
+                            }
+                        }
+                        self.soundpack_confirm_delete = false;
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        self.soundpack_confirm_delete = false;
+                    }
+                });
+            });
+    }
+
+    /// Render browser download dialog
+    fn render_browser_download_dialog(&mut self, ui: &mut egui::Ui, theme: &Theme, game_dir: &Path) {
+        let url = self.browser_download_url.clone().unwrap_or_default();
+
+        egui::Window::new("Browser Download Required")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.label("This soundpack cannot be directly downloaded by the launcher.");
+                ui.label("You need to download it manually with your browser.");
+                ui.add_space(8.0);
+
+                ui.label("1. Open the URL in your browser:");
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&url).color(theme.text_secondary).small());
+                });
+                ui.add_space(4.0);
+                if ui.button("Open in Browser").clicked() {
+                    let _ = open::that(&url);
+                }
+
+                ui.add_space(8.0);
+                ui.label("2. Download the soundpack and save it to your computer.");
+
+                ui.add_space(8.0);
+                ui.label("3. Select the downloaded file:");
+
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Select File...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Archives", &["zip", "rar", "7z"])
+                            .set_title("Select Downloaded Soundpack")
+                            .pick_file()
+                        {
+                            // Start installation from file
+                            self.install_soundpack_from_file(path, game_dir);
+                            self.browser_download_url = None;
+                            self.browser_download_soundpack = None;
+                        }
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        self.browser_download_url = None;
+                        self.browser_download_soundpack = None;
+                    }
+                });
+            });
+    }
+
+    /// Refresh the installed soundpack list
+    fn refresh_soundpack_list(&mut self, game_dir: &Path) {
+        if self.soundpack_list_loading {
+            return;
+        }
+
+        self.soundpack_list_loading = true;
+        self.soundpack_error = None;
+
+        let game_dir = game_dir.to_path_buf();
+        let task = tokio::spawn(async move { soundpack::list_installed_soundpacks(&game_dir).await });
+
+        self.soundpack_list_task = Some(task);
+    }
+
+    /// Install a soundpack from the repository
+    fn install_soundpack(&mut self, repo_soundpack: RepoSoundpack, game_dir: &Path) {
+        // Check if it's a browser download
+        if repo_soundpack.download_type == "browser_download" {
+            self.browser_download_url = Some(repo_soundpack.url.clone());
+            self.browser_download_soundpack = Some(repo_soundpack);
+            return;
+        }
+
+        self.soundpack_error = None;
+        self.soundpack_progress = SoundpackProgress::default();
+
+        let (progress_tx, progress_rx) = watch::channel(SoundpackProgress::default());
+        self.soundpack_progress_rx = Some(progress_rx);
+
+        let client = reqwest::Client::new();
+        let game_dir = game_dir.to_path_buf();
+
+        let task = tokio::spawn(async move {
+            soundpack::install_soundpack(client, repo_soundpack, game_dir, progress_tx).await
+        });
+
+        self.soundpack_task = Some(task);
+    }
+
+    /// Install a soundpack from a local file
+    fn install_soundpack_from_file(&mut self, archive_path: PathBuf, game_dir: &Path) {
+        self.soundpack_error = None;
+        self.soundpack_progress = SoundpackProgress::default();
+
+        let (progress_tx, progress_rx) = watch::channel(SoundpackProgress::default());
+        self.soundpack_progress_rx = Some(progress_rx);
+
+        let game_dir = game_dir.to_path_buf();
+
+        let task = tokio::spawn(async move {
+            soundpack::install_from_file(archive_path, game_dir, progress_tx).await
+        });
+
+        self.soundpack_task = Some(task);
+    }
+
+    /// Poll soundpack tasks for completion
+    fn poll_soundpack_tasks(&mut self, ctx: &egui::Context) {
+        // Update progress from receiver
+        if let Some(ref mut rx) = self.soundpack_progress_rx {
+            if rx.has_changed().unwrap_or(false) {
+                self.soundpack_progress = rx.borrow_and_update().clone();
+                ctx.request_repaint();
+            }
+        }
+
+        // Check main soundpack task
+        if let Some(ref task) = self.soundpack_task {
+            if task.is_finished() {
+                let task = self.soundpack_task.take().unwrap();
+                self.soundpack_progress_rx = None;
+
+                match task.now_or_never() {
+                    Some(Ok(Ok(installed))) => {
+                        tracing::info!("Soundpack installed: {}", installed.name);
+                        self.soundpack_progress.phase = SoundpackPhase::Complete;
+
+                        // Refresh the list
+                        if let Some(dir) = &self.config.game.directory {
+                            self.refresh_soundpack_list(&PathBuf::from(dir));
+                        }
+                    }
+                    Some(Ok(Err(SoundpackError::Cancelled))) => {
+                        // This is the delete case - just refresh
+                        self.soundpack_progress = SoundpackProgress::default();
+                    }
+                    Some(Ok(Err(e))) => {
+                        tracing::error!("Soundpack operation failed: {}", e);
+                        self.soundpack_error = Some(e.to_string());
+                        self.soundpack_progress.phase = SoundpackPhase::Failed;
+                        self.soundpack_progress.error = Some(e.to_string());
+                    }
+                    Some(Err(e)) => {
+                        tracing::error!("Soundpack task panicked: {}", e);
+                        self.soundpack_error = Some("Task panicked".to_string());
+                        self.soundpack_progress.phase = SoundpackPhase::Failed;
+                    }
+                    None => {
+                        tracing::warn!("Soundpack task not ready despite is_finished()");
+                    }
+                }
+            } else {
+                ctx.request_repaint();
+            }
+        }
+
+        // Check list loading task
+        if let Some(ref task) = self.soundpack_list_task {
+            if task.is_finished() {
+                let task = self.soundpack_list_task.take().unwrap();
+                self.soundpack_list_loading = false;
+
+                match task.now_or_never() {
+                    Some(Ok(Ok(list))) => {
+                        self.soundpack_list = list;
+                        // Preserve selection if still valid
+                        if let Some(idx) = self.soundpack_installed_idx {
+                            if idx >= self.soundpack_list.len() {
+                                self.soundpack_installed_idx = None;
+                            }
+                        }
+                    }
+                    Some(Ok(Err(e))) => {
+                        tracing::error!("Failed to load soundpack list: {}", e);
+                        self.soundpack_error = Some(e.to_string());
+                    }
+                    Some(Err(e)) => {
+                        tracing::error!("Soundpack list task panicked: {}", e);
+                        self.soundpack_error = Some("Task panicked".to_string());
+                    }
+                    None => {
+                        tracing::warn!("Soundpack list task not ready despite is_finished()");
+                    }
+                }
+            } else {
+                ctx.request_repaint();
+            }
+        }
     }
 
     /// Render the settings tab

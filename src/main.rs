@@ -5,6 +5,7 @@ mod db;
 mod game;
 mod github;
 mod migration;
+mod soundpack;
 mod theme;
 mod update;
 
