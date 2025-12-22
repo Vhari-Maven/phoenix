@@ -1,6 +1,6 @@
 //! Shared UI components for Phoenix launcher
 
-use eframe::egui::{self, Color32, RichText, Rounding, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, RichText, Vec2};
 use std::path::PathBuf;
 
 use crate::app::PhoenixApp;
@@ -20,11 +20,11 @@ pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str
 
     let button = egui::Button::new(RichText::new(label).color(text_color))
         .fill(bg)
-        .rounding(Rounding {
-            nw: 6.0,
-            ne: 6.0,
-            sw: 0.0,
-            se: 0.0,
+        .corner_radius(CornerRadius {
+            nw: 6,
+            ne: 6,
+            sw: 0,
+            se: 0,
         })
         .min_size(Vec2::new(80.0, 32.0));
 
@@ -142,9 +142,9 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
 
 /// Create a consistently styled frame for progress displays
 pub fn progress_frame(theme: &Theme) -> egui::Frame {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(theme.bg_light.gamma_multiply(0.5))
-        .rounding(6.0)
+        .corner_radius(6.0)
         .inner_margin(12.0)
 }
 

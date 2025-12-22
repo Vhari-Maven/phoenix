@@ -11,7 +11,7 @@ A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 - **HTTP:** reqwest
 - **Serialization:** serde, serde_json, toml
 - **Database:** rusqlite (SQLite)
-- **Archives:** zip, sevenz-rust, unrar crates (ZIP, 7z, RAR)
+- **Archives:** zip crate (ZIP only)
 - **Images:** image crate (icon loading)
 - **File ops:** remove_dir_all crate (fast directory deletion)
 - **Browser:** open crate (open URLs in default browser)

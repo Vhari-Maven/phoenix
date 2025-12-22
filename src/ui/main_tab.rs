@@ -37,9 +37,9 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             ui.add_space(8.0);
 
             // Create a subtle inner frame for game details
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(theme.bg_light.gamma_multiply(0.5))
-                .rounding(4.0)
+                .corner_radius(4.0)
                 .inner_margin(12.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -186,18 +186,18 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 if app.game_info.is_none() && app.config.game.directory.is_some() {
                     // No game installed - show install prompt
-                    egui::Frame::none()
+                    egui::Frame::new()
                         .fill(theme.accent.gamma_multiply(0.2))
-                        .rounding(4.0)
+                        .corner_radius(4.0)
                         .inner_margin(egui::vec2(8.0, 4.0))
                         .show(ui, |ui| {
                             ui.label(RichText::new("Ready to install").color(theme.accent).strong());
                         });
                 } else if app.is_selected_release_different() {
                     // Different version selected - can update
-                    egui::Frame::none()
+                    egui::Frame::new()
                         .fill(theme.success.gamma_multiply(0.2))
-                        .rounding(4.0)
+                        .corner_radius(4.0)
                         .inner_margin(egui::vec2(8.0, 4.0))
                         .show(ui, |ui| {
                             ui.label(RichText::new("Update available").color(theme.success).strong());
@@ -230,9 +230,9 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         // Calculate available height for changelog (leave room for buttons)
         let available_height = ui.available_height() - 70.0; // Reserve space for button row
 
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(theme.bg_medium)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .inner_margin(16.0)
             .stroke(egui::Stroke::new(1.0, theme.border))
             .show(ui, |ui| {
@@ -309,7 +309,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         )
         .fill(if can_click { theme.success } else { theme.bg_medium })
         .min_size(Vec2::new(button_width, 44.0))
-        .rounding(6.0);
+        .corner_radius(6.0);
 
         if ui.add_enabled(can_click, update_btn).clicked() {
             app.start_update();
@@ -327,7 +327,7 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         )
         .fill(if can_launch { theme.accent } else { theme.bg_medium })
         .min_size(Vec2::new(button_width, 44.0))
-        .rounding(6.0);
+        .corner_radius(6.0);
 
         if ui.add_enabled(can_launch, launch_btn).clicked() {
             app.launch_game();
@@ -342,9 +342,9 @@ where
 {
     let theme = app.ui.current_theme.clone();
 
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(theme.bg_medium)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .stroke(egui::Stroke::new(1.0, theme.border))
         .show(ui, |ui| {

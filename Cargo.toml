@@ -8,9 +8,9 @@ license = "MIT"
 
 [dependencies]
 # GUI
-eframe = "0.29"
-egui = "0.29"
-egui_commonmark = "0.18"
+eframe = "0.33"
+egui = "0.33"
+egui_commonmark = "0.22"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -24,10 +24,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
-# Archives
+# Archives (only ZIP supported for smaller binary and faster builds)
 zip = "2"
-sevenz-rust = "0.6"
-unrar = "0.5"
 
 # Browser
 open = "5"
@@ -45,18 +43,18 @@ rfd = "0.15"
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
 
-# Image loading (for window icon)
-image = "0.25"
+# Image loading (for window icon - PNG only to reduce binary size)
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Utilities
 walkdir = "2"
 sha2 = "0.10"
-directories = "5"
+directories = "6"
 chrono = { version = "0.4", features = ["serde"] }
-thiserror = "1"
+thiserror = "2"
 anyhow = "1"
 regex = "1"
-remove_dir_all = "0.8"
+remove_dir_all = "1"
 
 # Windows-specific
 [target.'cfg(windows)'.dependencies]
@@ -69,7 +67,7 @@ windows = { version = "0.58", features = [
 
 [build-dependencies]
 winres = "0.1"
-image = "0.25"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 

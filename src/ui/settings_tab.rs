@@ -24,9 +24,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             ui.add_space(16.0);
 
             // Appearance section
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(theme.bg_medium)
-                .rounding(8.0)
+                .corner_radius(8.0)
                 .inner_margin(16.0)
                 .stroke(egui::Stroke::new(1.0, theme.border))
                 .show(ui, |ui| {
@@ -79,18 +79,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         ];
 
                         for (label, color) in colors {
-                            let (rect, _) = ui.allocate_exact_size(swatch_size, egui::Sense::hover());
+                            let (rect, response) = ui.allocate_exact_size(swatch_size, egui::Sense::hover());
                             ui.painter().rect_filled(rect, 4.0, color);
-                            if ui.rect_contains_pointer(rect) {
-                                egui::show_tooltip(
-                                    ui.ctx(),
-                                    ui.layer_id(),
-                                    egui::Id::new(label),
-                                    |ui| {
-                                        ui.label(label);
-                                    },
-                                );
-                            }
+                            response.on_hover_text(label);
                             ui.add_space(4.0);
                         }
                     });
@@ -99,9 +90,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             ui.add_space(12.0);
 
             // Behavior section
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(theme.bg_medium)
-                .rounding(8.0)
+                .corner_radius(8.0)
                 .inner_margin(16.0)
                 .stroke(egui::Stroke::new(1.0, theme.border))
                 .show(ui, |ui| {
@@ -138,9 +129,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             ui.add_space(12.0);
 
             // Updates section
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(theme.bg_medium)
-                .rounding(8.0)
+                .corner_radius(8.0)
                 .inner_margin(16.0)
                 .stroke(egui::Stroke::new(1.0, theme.border))
                 .show(ui, |ui| {
@@ -191,9 +182,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             ui.add_space(12.0);
 
             // Backups section
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(theme.bg_medium)
-                .rounding(8.0)
+                .corner_radius(8.0)
                 .inner_margin(16.0)
                 .stroke(egui::Stroke::new(1.0, theme.border))
                 .show(ui, |ui| {
@@ -293,9 +284,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             ui.add_space(12.0);
 
             // Game settings section
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(theme.bg_medium)
-                .rounding(8.0)
+                .corner_radius(8.0)
                 .inner_margin(16.0)
                 .stroke(egui::Stroke::new(1.0, theme.border))
                 .show(ui, |ui| {

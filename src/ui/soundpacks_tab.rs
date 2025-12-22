@@ -83,9 +83,9 @@ fn render_installed_soundpacks_panel(
     game_dir: &Path,
     is_busy: bool,
 ) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(theme.bg_medium)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(12.0)
         .stroke(egui::Stroke::new(1.0, theme.border))
         .show(ui, |ui| {
@@ -214,9 +214,9 @@ fn render_repository_soundpacks_panel(
     game_dir: &Path,
     is_busy: bool,
 ) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(theme.bg_medium)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(12.0)
         .stroke(egui::Stroke::new(1.0, theme.border))
         .show(ui, |ui| {
@@ -294,9 +294,9 @@ fn render_repository_soundpacks_panel(
 
 /// Render the soundpack details panel
 fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(theme.bg_medium)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(12.0)
         .stroke(egui::Stroke::new(1.0, theme.border))
         .show(ui, |ui| {

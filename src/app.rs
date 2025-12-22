@@ -408,9 +408,9 @@ impl eframe::App for PhoenixApp {
 
         // Top menu bar
         egui::TopBottomPanel::top("menu_bar")
-            .frame(egui::Frame::none().fill(theme.bg_darkest).inner_margin(4.0))
+            .frame(egui::Frame::new().fill(theme.bg_darkest).inner_margin(4.0))
             .show(ctx, |ui| {
-                egui::menu::bar(ui, |ui| {
+                egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button("File", |ui| {
                         if ui.button("Exit").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -419,7 +419,7 @@ impl eframe::App for PhoenixApp {
                     ui.menu_button("Help", |ui| {
                         if ui.button("About").clicked() {
                             self.ui.show_about_dialog = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                     });
                 });
@@ -427,7 +427,7 @@ impl eframe::App for PhoenixApp {
 
         // Status bar at bottom
         egui::TopBottomPanel::bottom("status_bar")
-            .frame(egui::Frame::none().fill(theme.bg_darkest).inner_margin(8.0))
+            .frame(egui::Frame::new().fill(theme.bg_darkest).inner_margin(8.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(&self.status_message).color(theme.text_muted));
@@ -436,7 +436,7 @@ impl eframe::App for PhoenixApp {
 
         // Main content area
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(theme.bg_dark).inner_margin(16.0))
+            .frame(egui::Frame::new().fill(theme.bg_dark).inner_margin(16.0))
             .show(ctx, |ui| {
                 // Tab bar
                 ui.horizontal(|ui| {
