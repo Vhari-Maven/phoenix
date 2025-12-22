@@ -29,14 +29,10 @@ See the [Releases](https://github.com/Vhari-Maven/phoenix/releases) page for the
 
 ## FAQ
 
-### Where is my previous version?
-
-It is stored in the `previous_version` directory inside your game directory.
-
 ### How does the launcher update my game?
 
 1. Downloads the archive for the new version
-2. Moves your current installation to `previous_version` (old backups are cleaned up in the background)
+2. Moves your current installation to `.phoenix_archive` (old archives are cleaned up in the background)
 3. Extracts the new version to your game directory
 4. Intelligently restores your content:
    - **Saves** - Copied from previous version (or left in place with `prevent_save_move` option)
@@ -45,13 +41,6 @@ It is stored in the `previous_version` directory inside your game directory.
    - **Soundpacks** - Only custom soundpacks are restored
    - **Fonts** - Only fonts not included in the new version are restored
    - **Config** - Your settings are preserved (excluding debug logs)
-
-### I think the launcher deleted my files. What can I do?
-
-Phoenix goes to great lengths not to delete important files. With default settings, files are always moved rather than deleted. Check these locations:
-
-1. `previous_version` subdirectory in your game folder
-2. Your system recycle bin
 
 ### My antivirus flagged the launcher. What can I do?
 
@@ -70,6 +59,7 @@ Please [contact the CDDA developers](https://cataclysmdda.org/#ive-found-a-bug--
 
 - **Config file:** `%APPDATA%\phoenix\Phoenix\config\config.toml`
 - **Version cache:** `%APPDATA%\phoenix\Phoenix\data\phoenix.db`
+- **Backups:** `%APPDATA%\phoenix\Phoenix\data\backups\`
 
 ## Building
 
