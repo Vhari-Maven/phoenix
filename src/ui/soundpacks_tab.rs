@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::app::PhoenixApp;
 use crate::soundpack::{self, SoundpackError, SoundpackPhase};
-use crate::theme::Theme;
+use super::theme::Theme;
+use crate::ui::components::{progress_frame, render_current_file};
 use crate::util::format_size;
 
 /// Render the soundpacks tab
@@ -386,12 +387,7 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
 fn render_soundpack_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
     let progress = &app.soundpack.progress;
 
-    egui::Frame::none()
-        .fill(theme.bg_medium)
-        .rounding(8.0)
-        .inner_margin(12.0)
-        .stroke(egui::Stroke::new(1.0, theme.border))
-        .show(ui, |ui| {
+    progress_frame(theme).show(ui, |ui| {
             let status_color = match progress.phase {
                 SoundpackPhase::Complete => theme.success,
                 SoundpackPhase::Failed => theme.error,
@@ -434,13 +430,7 @@ fn render_soundpack_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme)
                                 .fill(theme.accent),
                         );
                     }
-                    if !progress.current_file.is_empty() {
-                        ui.label(
-                            RichText::new(&progress.current_file)
-                                .color(theme.text_muted)
-                                .small(),
-                        );
-                    }
+                    render_current_file(ui, &progress.current_file, theme);
                 }
                 SoundpackPhase::Complete => {
                     ui.label(

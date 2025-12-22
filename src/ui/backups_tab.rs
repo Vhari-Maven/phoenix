@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::app::PhoenixApp;
 use crate::backup::BackupPhase;
-use crate::theme::Theme;
+use super::theme::Theme;
+use crate::ui::components::{progress_frame, render_current_file, render_file_progress};
 
 /// Render the backups tab
 pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
@@ -358,11 +359,7 @@ fn render_backup_confirm_dialogs(
 fn render_backup_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
     let progress = &app.backup.progress;
 
-    egui::Frame::none()
-        .fill(theme.bg_light.gamma_multiply(0.5))
-        .rounding(6.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
+    progress_frame(theme).show(ui, |ui| {
             ui.set_width(ui.available_width());
 
             // Phase label
@@ -391,22 +388,8 @@ fn render_backup_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
                     ui.add(egui::ProgressBar::new(fraction).show_percentage());
 
                     ui.add_space(4.0);
-                    ui.label(
-                        RichText::new(format!(
-                            "{} / {} files",
-                            progress.files_processed, progress.total_files
-                        ))
-                        .color(theme.text_muted)
-                        .size(11.0),
-                    );
-
-                    if !progress.current_file.is_empty() {
-                        ui.label(
-                            RichText::new(&progress.current_file)
-                                .color(theme.text_muted)
-                                .size(10.0),
-                        );
-                    }
+                    render_file_progress(ui, progress.files_processed, progress.total_files, theme);
+                    render_current_file(ui, &progress.current_file, theme);
                 }
                 BackupPhase::Scanning | BackupPhase::Cleaning => {
                     ui.add(egui::ProgressBar::new(0.0).animate(true));

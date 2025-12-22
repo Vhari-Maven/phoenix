@@ -82,10 +82,11 @@ phoenix/
 │   │   └── releases.rs  #   ReleasesState + poll
 │   ├── ui/              # Extracted UI modules
 │   │   ├── mod.rs       #   Module exports
-│   │   ├── components.rs#   Shared UI components (tabs, dialogs)
-│   │   ├── main_tab.rs  #   Game info, updates, changelog (~502 lines)
-│   │   ├── backups_tab.rs#  Backup list, create/restore/delete (~417 lines)
-│   │   ├── soundpacks_tab.rs# Two-column layout, install/delete (~576 lines)
+│   │   ├── theme.rs     #   Theme system with color presets
+│   │   ├── components.rs#   Shared UI components (tabs, dialogs, progress)
+│   │   ├── main_tab.rs  #   Game info, updates, changelog (~490 lines)
+│   │   ├── backups_tab.rs#  Backup list, create/restore/delete (~405 lines)
+│   │   ├── soundpacks_tab.rs# Two-column layout, install/delete (~568 lines)
 │   │   └── settings_tab.rs#  Appearance, behavior, game settings (~323 lines)
 │   ├── task.rs          # Generic task polling helper
 │   ├── util.rs          # Shared utilities (format_size)
@@ -96,7 +97,6 @@ phoenix/
 │   ├── github.rs        # GitHub API client, release fetching
 │   ├── migration.rs     # Smart migration for updates
 │   ├── soundpack.rs     # Soundpack management
-│   ├── theme.rs         # Theme system with color presets
 │   └── update.rs        # Download, extract, backup, restore logic
 ├── build.rs             # Windows resource embedding (icon, version info)
 ├── Cargo.toml
@@ -116,7 +116,9 @@ See [docs/REFACTOR.md](docs/REFACTOR.md) for the full refactoring plan.
 - Phase 1: UI Module Extraction (app.rs reduced from ~2,700 to ~1,165 lines)
 - Phase 1.5: UI Components & Task Helper (app.rs reduced to ~988 lines)
 - Phase 2: format_size() deduplication into util.rs
+- Phase 2.5: Progress rendering deduplication into ui/components.rs
 - Phase 3: State Struct Extraction (app.rs reduced to ~474 lines)
+- Module Reorganization (theme.rs moved to ui/)
 
 **Planned:**
 - Phase 4: Service Abstraction (optional)

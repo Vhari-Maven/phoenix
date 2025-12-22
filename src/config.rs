@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::theme::ThemePreset;
+use crate::ui::theme::ThemePreset;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

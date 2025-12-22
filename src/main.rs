@@ -11,7 +11,6 @@ mod migration;
 mod soundpack;
 mod state;
 mod task;
-mod theme;
 mod ui;
 mod update;
 mod util;

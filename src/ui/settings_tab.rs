@@ -3,7 +3,7 @@
 use eframe::egui::{self, RichText, Vec2};
 
 use crate::app::PhoenixApp;
-use crate::theme::ThemePreset;
+use super::theme::ThemePreset;
 
 /// Render the settings tab
 pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {

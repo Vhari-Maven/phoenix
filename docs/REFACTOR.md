@@ -17,11 +17,12 @@ This document tracks refactoring work to improve maintainability after MVP compl
 | `state/releases.rs` | ~169 | New - ReleasesState + poll |
 | `state/ui.rs` | ~42 | New - UiState + Tab enum |
 | `state/mod.rs` | ~33 | New - StateEvent enum |
-| `ui/soundpacks_tab.rs` | ~576 | Extracted |
-| `ui/main_tab.rs` | ~502 | Extracted |
-| `ui/backups_tab.rs` | ~417 | Extracted |
+| `ui/soundpacks_tab.rs` | ~568 | Extracted |
+| `ui/main_tab.rs` | ~490 | Extracted |
+| `ui/backups_tab.rs` | ~405 | Extracted |
 | `ui/settings_tab.rs` | ~323 | Extracted |
-| `ui/components.rs` | ~135 | Shared UI components |
+| `ui/components.rs` | ~168 | Shared UI components + progress helpers |
+| `ui/theme.rs` | ~270 | Theme system (moved from root) |
 | `task.rs` | ~58 | Task polling helper |
 | `util.rs` | ~58 | Shared utilities |
 | `soundpack.rs` | ~885 | Good |
@@ -31,9 +32,8 @@ This document tracks refactoring work to improve maintainability after MVP compl
 | `game.rs` | ~515 | Good |
 | `github.rs` | ~330 | Excellent |
 | `config.rs` | ~290 | Excellent |
-| `theme.rs` | ~270 | Excellent |
 | `db.rs` | ~240 | Good |
-| `main.rs` | ~138 | Excellent |
+| `main.rs` | ~135 | Excellent |
 
 ### Architecture
 
@@ -52,7 +52,8 @@ src/
 ├── util.rs              # Shared utilities (format_size)
 ├── ui/                  # UI rendering modules
 │   ├── mod.rs
-│   ├── components.rs    # Shared UI components (tabs, dialogs)
+│   ├── theme.rs         # Theme system (colors, presets)
+│   ├── components.rs    # Shared UI components (tabs, dialogs, progress)
 │   ├── main_tab.rs      # Game info, updates, changelog
 │   ├── backups_tab.rs   # Backup management
 │   ├── soundpacks_tab.rs# Soundpack management
@@ -64,7 +65,6 @@ src/
 ├── github.rs            # GitHub API client
 ├── migration.rs         # Update migration
 ├── soundpack.rs         # Soundpack service
-├── theme.rs             # Theme system
 └── update.rs            # Update download/install
 ```
 
@@ -166,14 +166,42 @@ Consolidated 4 copies of `format_size()` into `src/util.rs`:
 
 **Result:** Net reduction of ~6 lines, eliminated code duplication, unified formatting style (1 decimal, KB/MB/GB labels)
 
+### Phase 2.5: Progress Rendering Deduplication (Done)
+
+Extracted common progress display patterns into `ui/components.rs`:
+
+| Helper | Purpose |
+|--------|---------|
+| `progress_frame(theme)` | Consistently styled frame for progress displays |
+| `render_file_progress(ui, processed, total, theme)` | "X / Y files" label |
+| `render_current_file(ui, current_file, theme)` | Current file being processed |
+
+**Files updated:**
+- `main_tab.rs` - Extract phase uses helpers
+- `backups_tab.rs` - Compress/Extract phase uses helpers
+- `soundpacks_tab.rs` - Frame styling unified, extract phase uses helper
+
+**Result:** ~30 lines of duplicated code eliminated, consistent frame styling across all progress displays (soundpacks previously used different styling)
+
+### Module Reorganization (Done)
+
+Moved `theme.rs` from root to `ui/theme.rs` for better logical grouping.
+
+**Rationale:** Theme is purely UI-related (colors, styling) and belongs with other UI code.
+
+**Changes:**
+- Moved `src/theme.rs` → `src/ui/theme.rs`
+- Updated imports in 7 files to use `crate::ui::theme` or `super::theme`
+- Root level reduced from 14 to 13 .rs files
+
 ---
 
 ## Future Work
 
-### Phase 2: Deduplication (Partial)
+### Phase 2: Deduplication (Complete)
 
 - ~~**format_size()** - Duplicated in `backup.rs`, `soundpack.rs`, `game.rs`~~ Done
-- **Progress rendering** - Similar patterns for update/backup/soundpack progress
+- ~~**Progress rendering** - Similar patterns for update/backup/soundpack progress~~ Done
 
 ### Phase 4: Service Abstraction (Optional)
 

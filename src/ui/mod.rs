@@ -7,6 +7,7 @@ mod components;
 mod main_tab;
 mod settings_tab;
 mod soundpacks_tab;
+pub mod theme;
 
 pub use backups_tab::render_backups_tab;
 pub use components::{render_about_dialog, render_tab};

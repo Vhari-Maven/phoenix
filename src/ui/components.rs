@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::app::PhoenixApp;
 use crate::state::Tab;
+use super::theme::Theme;
 
 /// Render a tab button
 pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str) {
@@ -133,4 +134,36 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                 ui.add_space(8.0);
             });
         });
+}
+
+// ============================================================================
+// Progress display helpers
+// ============================================================================
+
+/// Create a consistently styled frame for progress displays
+pub fn progress_frame(theme: &Theme) -> egui::Frame {
+    egui::Frame::none()
+        .fill(theme.bg_light.gamma_multiply(0.5))
+        .rounding(6.0)
+        .inner_margin(12.0)
+}
+
+/// Render file progress count (e.g., "42 / 100 files")
+pub fn render_file_progress(ui: &mut egui::Ui, processed: usize, total: usize, theme: &Theme) {
+    ui.label(
+        RichText::new(format!("{} / {} files", processed, total))
+            .color(theme.text_muted)
+            .size(11.0),
+    );
+}
+
+/// Render current file being processed (if not empty)
+pub fn render_current_file(ui: &mut egui::Ui, current_file: &str, theme: &Theme) {
+    if !current_file.is_empty() {
+        ui.label(
+            RichText::new(current_file)
+                .color(theme.text_muted)
+                .size(10.0),
+        );
+    }
 }

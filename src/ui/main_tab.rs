@@ -4,7 +4,8 @@ use eframe::egui::{self, RichText, Vec2};
 use egui_commonmark::CommonMarkViewer;
 
 use crate::app::PhoenixApp;
-use crate::theme::Theme;
+use super::theme::Theme;
+use crate::ui::components::{progress_frame, render_current_file, render_file_progress};
 use crate::update::UpdatePhase;
 use crate::util::format_size;
 
@@ -358,11 +359,7 @@ where
 fn render_update_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
     let progress = &app.update.progress;
 
-    egui::Frame::none()
-        .fill(theme.bg_light.gamma_multiply(0.5))
-        .rounding(6.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
+    progress_frame(theme).show(ui, |ui| {
             ui.set_width(ui.available_width());
 
             // Phase label with icon
@@ -406,23 +403,8 @@ fn render_update_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
                     ui.add(egui::ProgressBar::new(fraction).show_percentage());
 
                     ui.add_space(4.0);
-                    ui.label(
-                        RichText::new(format!(
-                            "{} / {} files",
-                            progress.files_extracted,
-                            progress.total_files
-                        ))
-                        .color(theme.text_muted)
-                        .size(11.0)
-                    );
-
-                    if !progress.current_file.is_empty() {
-                        ui.label(
-                            RichText::new(&progress.current_file)
-                                .color(theme.text_muted)
-                                .size(10.0)
-                        );
-                    }
+                    render_file_progress(ui, progress.files_extracted, progress.total_files, theme);
+                    render_current_file(ui, &progress.current_file, theme);
                 }
                 UpdatePhase::BackingUp | UpdatePhase::Restoring => {
                     // Indeterminate progress (spinner-like)

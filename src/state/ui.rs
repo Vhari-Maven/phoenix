@@ -2,7 +2,7 @@
 
 use egui_commonmark::CommonMarkCache;
 
-use crate::theme::Theme;
+use crate::ui::theme::Theme;
 
 /// Application tabs
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
