@@ -46,7 +46,7 @@ impl PhoenixApp {
         // Load configuration
         let phase_start = Instant::now();
         let config = Config::load().unwrap_or_default();
-        tracing::debug!(
+        tracing::info!(
             "Config loaded in {:.1}ms",
             phase_start.elapsed().as_secs_f32() * 1000.0
         );
@@ -60,7 +60,7 @@ impl PhoenixApp {
                 None
             }
         };
-        tracing::debug!(
+        tracing::info!(
             "Database opened in {:.1}ms",
             phase_start.elapsed().as_secs_f32() * 1000.0
         );
@@ -73,7 +73,7 @@ impl PhoenixApp {
                 .flatten()
         });
         if config.game.directory.is_some() {
-            tracing::debug!(
+            tracing::info!(
                 "Game detection in {:.1}ms",
                 phase_start.elapsed().as_secs_f32() * 1000.0
             );
