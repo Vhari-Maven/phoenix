@@ -155,7 +155,7 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                     }
                     ui.label(
                         RichText::new(
-                            "  Leave saves in place instead of copying from previous_version/",
+                            "  Leave saves in place instead of copying from archive",
                         )
                         .color(theme.text_muted)
                         .size(11.0),
@@ -166,7 +166,7 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                     if ui
                         .checkbox(
                             &mut app.config.updates.remove_previous_version,
-                            "Remove previous_version after update",
+                            "Remove installation archive after update",
                         )
                         .changed()
                     {

@@ -4,6 +4,7 @@ use eframe::egui::{self, Color32, CornerRadius, RichText, Vec2};
 use std::path::PathBuf;
 
 use crate::app::PhoenixApp;
+use crate::config::Config;
 use crate::state::Tab;
 use super::theme::Theme;
 
@@ -34,10 +35,8 @@ pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str
 
         // Load backup list when switching to Backups tab
         if tab == Tab::Backups && previous_tab != Tab::Backups {
-            if let Some(ref dir) = app.config.game.directory {
-                if app.backup.list.is_empty() && !app.backup.list_loading {
-                    app.refresh_backup_list(&PathBuf::from(dir));
-                }
+            if app.backup.list.is_empty() && !app.backup.list_loading {
+                app.refresh_backup_list();
             }
         }
 
@@ -64,7 +63,7 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .fixed_size([300.0, 280.0])
+        .fixed_size([300.0, 300.0])
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(8.0);
@@ -84,7 +83,7 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                         .color(theme.text_secondary)
                 );
 
-                ui.add_space(12.0);
+                ui.add_space(8.0);
 
                 // Version
                 ui.label(
@@ -92,30 +91,46 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                         .color(theme.text_muted)
                 );
 
-                ui.add_space(12.0);
+                ui.add_space(8.0);
 
-                // Description
-                ui.label(
-                    RichText::new("A fast, native launcher for")
-                        .color(theme.text_secondary)
-                );
-                ui.label(
-                    RichText::new("Cataclysm: Dark Days Ahead")
-                        .color(theme.text_secondary)
-                );
-
-                ui.add_space(12.0);
-
-                // Links (separate lines for proper centering)
+                // Links
                 if ui.link("GitHub").clicked() {
                     let _ = open::that("https://github.com/Vhari-Maven/phoenix");
                 }
-                ui.add_space(4.0);
                 if ui.link("CDDA Website").clicked() {
                     let _ = open::that("https://cataclysmdda.org/");
                 }
 
                 ui.add_space(12.0);
+
+                // Locations section
+                ui.label(
+                    RichText::new("Data Locations")
+                        .size(12.0)
+                        .strong()
+                        .color(theme.accent)
+                );
+                ui.add_space(4.0);
+
+                if let Ok(path) = Config::config_path() {
+                    if let Some(dir) = path.parent() {
+                        if ui.link("Config").clicked() {
+                            let _ = open::that(dir);
+                        }
+                    }
+                }
+                if let Ok(path) = Config::backups_dir() {
+                    if ui.link("Backups").clicked() {
+                        let _ = open::that(&path);
+                    }
+                }
+                if let Ok(path) = Config::data_dir() {
+                    if ui.link("Data").clicked() {
+                        let _ = open::that(&path);
+                    }
+                }
+
+                ui.add_space(8.0);
 
                 // Built with
                 ui.label(

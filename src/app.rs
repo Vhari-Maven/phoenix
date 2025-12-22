@@ -106,6 +106,11 @@ impl PhoenixApp {
             soundpack: SoundpackState::default(),
         };
 
+        // Migrate legacy data (save_backups folder, previous_version folder)
+        if let Some(ref game_dir) = app.config.game.directory {
+            crate::legacy::migrate(std::path::Path::new(game_dir));
+        }
+
         // Auto-fetch releases for current branch on startup
         if let Some(event) = app.releases.fetch_for_branch(&branch, &app.github_client) {
             app.handle_event(event);
@@ -327,13 +332,13 @@ impl PhoenixApp {
     }
 
     /// Refresh the backup list
-    pub(crate) fn refresh_backup_list(&mut self, game_dir: &std::path::Path) {
-        self.backup.refresh_list(game_dir);
+    pub(crate) fn refresh_backup_list(&mut self) {
+        self.backup.refresh_list();
     }
 
     /// Delete the selected backup
-    pub(crate) fn delete_selected_backup(&mut self, game_dir: &std::path::Path) {
-        if let Some(event) = self.backup.delete_selected(game_dir) {
+    pub(crate) fn delete_selected_backup(&mut self) {
+        if let Some(event) = self.backup.delete_selected() {
             self.handle_event(event);
         }
     }
@@ -398,7 +403,7 @@ impl eframe::App for PhoenixApp {
         let update_events = self.update.poll(ctx);
         self.handle_events(update_events);
 
-        let backup_events = self.backup.poll(ctx, game_dir_ref);
+        let backup_events = self.backup.poll(ctx);
         self.handle_events(backup_events);
 
         let soundpack_events = self.soundpack.poll(ctx, game_dir_ref);

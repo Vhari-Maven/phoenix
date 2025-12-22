@@ -101,7 +101,7 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         .add_enabled(!is_busy, egui::Button::new("Refresh"))
                         .clicked()
                     {
-                        app.refresh_backup_list(&game_dir);
+                        app.refresh_backup_list();
                     }
                 });
             });
@@ -302,7 +302,7 @@ fn render_backup_confirm_dialogs(
                                 app.backup.confirm_delete = false;
                             }
                             if ui.button("Delete").clicked() {
-                                app.delete_selected_backup(game_dir);
+                                app.delete_selected_backup();
                                 app.backup.confirm_delete = false;
                             }
                         });
