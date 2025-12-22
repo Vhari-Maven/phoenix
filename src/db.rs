@@ -50,8 +50,6 @@ pub struct VersionInfo {
     pub version: String,
     /// Whether this is a stable release
     pub stable: bool,
-    /// Build number (for experimental builds)
-    pub build_number: Option<i64>,
     /// Release date (ISO format)
     pub released_on: Option<String>,
 }
@@ -120,7 +118,6 @@ impl Database {
             return Ok(Some(VersionInfo {
                 version: version.to_string(),
                 stable: true,
-                build_number: None,
                 released_on: None,
             }));
         }
@@ -135,7 +132,6 @@ impl Database {
             Ok(VersionInfo {
                 version: row.get(0)?,
                 stable: row.get::<_, i32>(1)? != 0,
-                build_number: row.get(2)?,
                 released_on: row.get(3)?,
             })
         });
@@ -145,35 +141,6 @@ impl Database {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
-    }
-
-    /// Store a new version mapping
-    pub fn store_version(&self, sha256: &str, info: &VersionInfo) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO game_versions
-             (sha256, version, stable, build_number, released_on)
-             VALUES (?, ?, ?, ?, ?)",
-            params![
-                sha256,
-                &info.version,
-                if info.stable { 1 } else { 0 },
-                info.build_number,
-                &info.released_on,
-            ],
-        )?;
-
-        tracing::debug!("Stored version {} for hash {}", info.version, &sha256[..8]);
-        Ok(())
-    }
-
-    /// Get count of cached versions
-    pub fn version_count(&self) -> Result<i64> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM game_versions",
-            [],
-            |row| row.get(0),
-        )?;
-        Ok(count)
     }
 
     /// Get cached SHA256 hash for an executable if file metadata matches
@@ -223,31 +190,6 @@ mod tests {
         let info = result.unwrap();
         assert_eq!(info.version, "0.F-3");
         assert!(info.stable);
-    }
-
-    #[test]
-    fn test_store_and_retrieve_version() {
-        let conn = Connection::open_in_memory().unwrap();
-        let db = Database { conn };
-        db.init_schema().unwrap();
-
-        let sha256 = "abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234";
-        let info = VersionInfo {
-            version: "2024-01-15-1234".to_string(),
-            stable: false,
-            build_number: Some(1234),
-            released_on: Some("2024-01-15".to_string()),
-        };
-
-        db.store_version(sha256, &info).unwrap();
-
-        let retrieved = db.get_version(sha256).unwrap();
-        assert!(retrieved.is_some());
-
-        let retrieved = retrieved.unwrap();
-        assert_eq!(retrieved.version, "2024-01-15-1234");
-        assert!(!retrieved.stable);
-        assert_eq!(retrieved.build_number, Some(1234));
     }
 
     #[test]

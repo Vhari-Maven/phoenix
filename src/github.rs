@@ -1,17 +1,11 @@
 use anyhow::Result;
-use regex::Regex;
 use serde::Deserialize;
-use std::sync::OnceLock;
 
 /// GitHub API base URL
 const GITHUB_API_BASE: &str = "https://api.github.com";
 
 /// Repository for CDDA game releases
 const CDDA_REPO: &str = "CleverRaven/Cataclysm-DDA";
-
-/// Regex pattern to match stable release tags
-/// Matches: 0.A, 0.A-1, 0.A-2, cdda-0.A, cdda-0.A-1, etc.
-const STABLE_TAG_PATTERN: &str = r"^(cdda-)?(0\.[A-Z])(-[0-9]+)?$";
 
 /// User agent for API requests
 const USER_AGENT: &str = concat!("Phoenix-Launcher/", env!("CARGO_PKG_VERSION"));
@@ -23,7 +17,6 @@ pub struct Release {
     pub name: String,
     pub body: Option<String>,
     pub published_at: String,
-    pub prerelease: bool,
     pub assets: Vec<ReleaseAsset>,
 }
 
@@ -33,20 +26,6 @@ pub struct ReleaseAsset {
     pub name: String,
     pub size: u64,
     pub browser_download_url: String,
-    pub content_type: String,
-}
-
-/// A git reference (tag) from GitHub API
-#[derive(Debug, Clone, Deserialize)]
-struct GitRef {
-    #[serde(rename = "ref")]
-    ref_name: String,
-}
-
-/// Get the compiled regex for matching stable tags
-fn stable_tag_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(STABLE_TAG_PATTERN).expect("Invalid stable tag regex"))
 }
 
 /// GitHub API rate limit information
@@ -264,30 +243,6 @@ impl GitHubClient {
         Ok(FetchResult { data: releases, rate_limit })
     }
 
-    /// Fetch the latest release
-    pub async fn get_latest_release(&self) -> Result<Release> {
-        let url = format!(
-            "{}/repos/{}/releases/latest",
-            GITHUB_API_BASE, CDDA_REPO
-        );
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Accept", "application/vnd.github.v3+json")
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitHub API error: {} - {}", status, text);
-        }
-
-        let release: Release = response.json().await?;
-        Ok(release)
-    }
-
     /// Find the Windows x64 graphical asset in a release
     /// Prefers the version with sounds if available
     pub fn find_windows_asset(release: &Release) -> Option<&ReleaseAsset> {
@@ -330,20 +285,4 @@ impl Default for GitHubClient {
     fn default() -> Self {
         Self::new().expect("Failed to create HTTP client")
     }
-}
-
-/// Filter releases by branch type
-pub fn filter_releases_by_branch<'a>(releases: &'a [Release], branch: &str) -> Vec<&'a Release> {
-    releases
-        .iter()
-        .filter(|r| {
-            if branch == "stable" {
-                // Stable releases are not prereleases and have version-like tags
-                !r.prerelease && !r.tag_name.contains("experimental")
-            } else {
-                // Experimental releases
-                r.tag_name.contains("experimental") || r.prerelease
-            }
-        })
-        .collect()
 }

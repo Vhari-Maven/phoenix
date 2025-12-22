@@ -1,3 +1,6 @@
+// Hide console window in release builds (Windows GUI app)
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod app;
 mod backup;
 mod config;
@@ -6,8 +9,11 @@ mod game;
 mod github;
 mod migration;
 mod soundpack;
-mod theme;
+mod state;
+mod task;
+mod ui;
 mod update;
+mod util;
 
 use anyhow::Result;
 use std::sync::Arc;

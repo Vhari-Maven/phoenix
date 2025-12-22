@@ -62,7 +62,6 @@ pub struct UpdateProgress {
     pub files_extracted: usize,
     pub total_files: usize,
     pub current_file: String,
-    pub error: Option<String>,
 }
 
 impl UpdateProgress {
@@ -81,15 +80,6 @@ impl UpdateProgress {
             0.0
         } else {
             self.files_extracted as f32 / self.total_files as f32
-        }
-    }
-
-    /// Get progress fraction for current phase
-    pub fn fraction(&self) -> f32 {
-        match self.phase {
-            UpdatePhase::Downloading => self.download_fraction(),
-            UpdatePhase::Extracting => self.extract_fraction(),
-            _ => 0.0,
         }
     }
 }
@@ -152,7 +142,6 @@ pub async fn download_asset(
     let mut downloaded: u64 = 0;
     let mut last_progress_time = Instant::now();
     let mut last_downloaded: u64 = 0;
-    let mut current_speed: u64 = 0;
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.context("Error reading download stream")?;
@@ -169,7 +158,7 @@ pub async fn download_asset(
         if elapsed >= Duration::from_millis(100) {
             // Calculate speed
             let bytes_since_last = downloaded - last_downloaded;
-            current_speed = (bytes_since_last as f64 / elapsed.as_secs_f64()) as u64;
+            let current_speed = (bytes_since_last as f64 / elapsed.as_secs_f64()) as u64;
 
             let _ = progress_tx.send(UpdateProgress {
                 phase: UpdatePhase::Downloading,
@@ -757,21 +746,6 @@ pub fn download_dir() -> Result<PathBuf> {
     Ok(download_dir)
 }
 
-/// Clean up partial download files.
-pub async fn cleanup_partial_downloads(download_dir: &Path) -> Result<()> {
-    let mut entries = tokio::fs::read_dir(download_dir).await?;
-
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("part") {
-            tracing::info!("Cleaning up partial download: {:?}", path);
-            tokio::fs::remove_file(&path).await.ok();
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -798,14 +772,12 @@ mod tests {
         progress.bytes_downloaded = 50;
         progress.total_bytes = 100;
         assert_eq!(progress.download_fraction(), 0.5);
-        assert_eq!(progress.fraction(), 0.5);
 
         // Extract progress
         progress.phase = UpdatePhase::Extracting;
         progress.files_extracted = 25;
         progress.total_files = 100;
         assert_eq!(progress.extract_fraction(), 0.25);
-        assert_eq!(progress.fraction(), 0.25);
 
         // Zero total should return 0
         progress.total_bytes = 0;
@@ -981,27 +953,6 @@ mod tests {
         assert!(src.join("file1.txt").exists());
     }
 
-    #[tokio::test]
-    async fn test_cleanup_partial_downloads() {
-        let temp_dir = TempDir::new().unwrap();
-        let download_dir = temp_dir.path();
-
-        // Create some files including .part files
-        fs::write(download_dir.join("complete.zip"), b"zip data").unwrap();
-        fs::write(download_dir.join("incomplete.zip.part"), b"partial").unwrap();
-        fs::write(download_dir.join("another.part"), b"partial2").unwrap();
-
-        // Cleanup
-        cleanup_partial_downloads(download_dir).await.unwrap();
-
-        // .part files should be removed
-        assert!(!download_dir.join("incomplete.zip.part").exists());
-        assert!(!download_dir.join("another.part").exists());
-
-        // Complete file should remain
-        assert!(download_dir.join("complete.zip").exists());
-    }
-
     #[test]
     fn test_update_progress_default() {
         let progress = UpdateProgress::default();
@@ -1014,3 +965,4 @@ mod tests {
         assert!(progress.current_file.is_empty());
     }
 }
+

@@ -2,19 +2,6 @@
 
 A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 
-## Project Overview
-
-This is a ground-up rebuild of the CDDA Game Launcher, aiming for sub-second startup times compared to the original Python/Qt launcher's 10-15 second load time.
-
-## Documentation
-
-- [docs/PLAN.md](docs/PLAN.md) - Development plan with spiral roadmap and current progress
-- [docs/ANALYSIS.md](docs/ANALYSIS.md) - Comprehensive analysis of the original Python launcher, including features, APIs, data models, and migration notes
-
-## Reference
-
-The original Python launcher source (v1.7.12) is in `reference/` (gitignored). Use this for understanding original behavior when implementing features.
-
 ## Tech Stack
 
 - **Language:** Rust (2024 edition)
@@ -53,6 +40,53 @@ This triggers the workflow which:
 
 Tags containing `alpha`, `beta`, or `rc` are marked as prereleases.
 
+## Features
+
+- Game detection, launching, version identification
+- Update downloads with smart migration (preserves custom mods, tilesets, soundpacks)
+- Backup/restore system with compression
+- Soundpack management (install from repository or local files)
+- Theme system (Amber, Purple, Cyan, Green, Catppuccin)
+
+## Architecture
+
+```
+src/
+├── main.rs              # Entry point, logging, icon loading
+├── app.rs               # PhoenixApp coordination (~474 lines)
+├── state/               # Grouped state structs with poll methods
+│   ├── mod.rs           # StateEvent enum + module exports
+│   ├── ui.rs            # UiState, Tab enum
+│   ├── backup.rs        # BackupState + poll
+│   ├── soundpack.rs     # SoundpackState + poll
+│   ├── update.rs        # UpdateState + poll
+│   └── releases.rs      # ReleasesState + poll
+├── ui/                  # UI rendering modules
+│   ├── mod.rs           # Module exports
+│   ├── theme.rs         # Theme system (colors, presets)
+│   ├── components.rs    # Shared UI components (tabs, dialogs, progress)
+│   ├── main_tab.rs      # Game info, updates, changelog
+│   ├── backups_tab.rs   # Backup management
+│   ├── soundpacks_tab.rs# Soundpack management
+│   └── settings_tab.rs  # Settings
+├── task.rs              # Generic task polling helper
+├── util.rs              # Shared utilities (format_size)
+├── backup.rs            # Backup service (create, restore, delete)
+├── config.rs            # Configuration (TOML)
+├── db.rs                # SQLite cache for version hashes
+├── game.rs              # Game detection and launching
+├── github.rs            # GitHub API client
+├── migration.rs         # Smart migration for updates
+├── soundpack.rs         # Soundpack service
+└── update.rs            # Update download and installation
+```
+
+**Key patterns:**
+- State structs (`BackupState`, `UpdateState`, etc.) own async task handles and progress channels
+- Poll methods return `Vec<StateEvent>` for cross-cutting concerns (status messages, logging)
+- UI modules are free functions that borrow `&mut PhoenixApp`
+- Config values passed as parameters rather than stored in state structs
+
 ## Project Structure
 
 ```
@@ -65,59 +99,15 @@ phoenix/
 │   ├── icon.png         # Embedded window icon
 │   └── soundpacks.json  # Embedded soundpack repository
 ├── docs/
-│   ├── PLAN.md          # Development roadmap
-│   └── ANALYSIS.md      # Original launcher analysis
+│   └── TODO.md          # Bug tracking and feature ideas
 ├── reference/           # Original Python source (gitignored)
-├── src/
-│   ├── main.rs          # Entry point, logging setup, icon loading
-│   ├── app.rs           # Application state, UI, tab system
-│   ├── backup.rs        # Save backup creation, restoration, auto-backup
-│   ├── config.rs        # Configuration management (TOML)
-│   ├── db.rs            # SQLite database for version caching
-│   ├── game.rs          # Game detection and launching
-│   ├── github.rs        # GitHub API client, release fetching
-│   ├── migration.rs     # Smart migration for updates (identity-based content detection)
-│   ├── soundpack.rs     # Soundpack management (download, install, enable/disable)
-│   ├── theme.rs         # Theme system with color presets
-│   └── update.rs        # Download, extract, backup, restore logic
+├── src/                 # Source code (see Architecture above)
+├── build.rs             # Windows resource embedding (icon, version info)
 ├── Cargo.toml
 ├── CLAUDE.md
-├── README.md            # User-facing documentation
-└── LICENSE              # MIT License
+├── README.md
+└── LICENSE
 ```
-
-## Development Progress
-
-See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
-
-**Completed:**
-- Spiral 1: Game Launching - browse, detect, launch game
-- Spiral 2: Version Detection - SHA256 lookup, SQLite caching, VERSION.txt fallback
-- Spiral 3: GitHub Integration - fetch releases, markdown changelog, rate limiting
-- Spiral 3.5: Theme System - 5 color presets, improved UI layout, custom icon
-- Spiral 4: Download & Update - progress tracking, smart migration, performance optimization
-  - Update time reduced from ~54s to ~18s via deferred backup deletion
-  - Background cleanup doesn't block user
-- Spiral 5: Backup System - full backup management
-  - Manual and automatic backups (before updates)
-  - Backup list with 7-column metadata display
-  - Restore with optional pre-restore backup
-  - Configurable retention and compression
-- Spiral 6: Soundpacks - full soundpack management
-  - Two-column UI (installed vs repository)
-  - Download and install from embedded repository
-  - Enable/disable soundpacks
-  - Delete with confirmation
-  - Support for ZIP, RAR, 7z archives
-  - Browser download fallback
-- Spiral 7: Polish
-  - Window size/position persistence
-  - Single instance enforcement
-  - About dialog
-  - Settings UI improvements
-  - README, LICENSE, GitHub Actions release workflow
-
-**Status:** MVP complete. All core features implemented.
 
 ## Key External APIs
 
@@ -159,3 +149,4 @@ skip_backup_before_restore = false # Skip pre-restore backup
 - Use `tracing` for logging
 - Prefer async/await for I/O operations
 - Keep UI responsive - never block the main thread
+- Run `cargo test` after changes
