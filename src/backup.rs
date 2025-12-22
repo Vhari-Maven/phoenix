@@ -202,6 +202,8 @@ pub async fn list_backups(game_dir: &Path) -> Result<Vec<BackupInfo>, BackupErro
 
 /// Read metadata from a backup file
 fn read_backup_info(path: &Path) -> Option<BackupInfo> {
+    use std::collections::HashSet;
+
     let file = File::open(path).ok()?;
     let metadata = file.metadata().ok()?;
     let modified: DateTime<Local> = metadata.modified().ok()?.into();
@@ -209,7 +211,7 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
 
     let mut archive = ZipArchive::new(file).ok()?;
     let mut uncompressed_size = 0u64;
-    let mut worlds_count = 0u32;
+    let mut worlds: HashSet<String> = HashSet::new();
     let mut characters_count = 0u32;
 
     // Scan archive for metadata
@@ -218,24 +220,29 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
             uncompressed_size += file.size();
 
             let name = file.name();
+            let parts: Vec<&str> = name.split('/').collect();
 
-            // Count worlds: directories containing world marker files
-            for world_file in WORLD_FILES {
-                if name.ends_with(world_file) {
-                    worlds_count += 1;
-                    break;
+            // Count worlds: unique directories containing world marker files
+            // Path format: save/WorldName/marker_file
+            if parts.len() == 3 {
+                let filename = parts[2];
+                if WORLD_FILES.contains(&filename) {
+                    worlds.insert(parts[1].to_string());
                 }
             }
 
-            // Count characters: .sav files at depth 3 (save/world/character.sav)
-            if name.ends_with(".sav") {
-                let depth = name.matches('/').count();
-                if depth == 2 {
+            // Count characters: .sav or .sav.zzip files at depth 2 (save/world/character.sav)
+            // CDDA uses .sav.zzip for compressed saves in newer versions
+            if parts.len() == 3 {
+                let filename = parts[2];
+                if filename.ends_with(".sav") || filename.ends_with(".sav.zzip") {
                     characters_count += 1;
                 }
             }
         }
     }
+
+    let worlds_count = worlds.len() as u32;
 
     let name = path
         .file_stem()

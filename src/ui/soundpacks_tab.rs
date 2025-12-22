@@ -432,9 +432,18 @@ fn render_soundpack_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme)
                     }
                     render_current_file(ui, &progress.current_file, theme);
                 }
+                SoundpackPhase::Deleting => {
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                    });
+                }
                 SoundpackPhase::Complete => {
-                    ui.label(
-                        RichText::new("Soundpack installed successfully!").color(theme.success),
+                    // Description already shown above, just show success bar
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::ProgressBar::new(1.0)
+                            .fill(theme.success),
                     );
                 }
                 SoundpackPhase::Failed => {
@@ -452,7 +461,7 @@ fn render_soundpack_delete_dialog(
     app: &mut PhoenixApp,
     ui: &mut egui::Ui,
     theme: &Theme,
-    game_dir: &Path,
+    _game_dir: &Path,
 ) {
     let selected_name = app
         .soundpack.installed_idx
@@ -485,7 +494,6 @@ fn render_soundpack_delete_dialog(
                     if let Some(idx) = app.soundpack.installed_idx {
                         if let Some(soundpack) = app.soundpack.list.get(idx) {
                             let path = soundpack.path.clone();
-                            let game_dir = game_dir.to_path_buf();
 
                             let task = tokio::spawn(async move {
                                 soundpack::delete_soundpack(path).await?;
@@ -495,9 +503,12 @@ fn render_soundpack_delete_dialog(
 
                             app.soundpack.task = Some(task);
                             app.soundpack.installed_idx = None;
-
-                            // Schedule list refresh
-                            app.refresh_soundpack_list(&game_dir);
+                            // Show deleting progress
+                            app.soundpack.progress = soundpack::SoundpackProgress {
+                                phase: soundpack::SoundpackPhase::Deleting,
+                                ..Default::default()
+                            };
+                            // Note: refresh_list is called in poll() after delete completes
                         }
                     }
                     app.soundpack.confirm_delete = false;

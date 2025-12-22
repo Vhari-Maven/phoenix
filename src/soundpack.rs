@@ -59,6 +59,7 @@ pub enum SoundpackPhase {
     Downloading,
     Extracting,
     Installing,
+    Deleting,
     Complete,
     Failed,
 }
@@ -71,8 +72,9 @@ impl SoundpackPhase {
             SoundpackPhase::Downloading => "Downloading soundpack...",
             SoundpackPhase::Extracting => "Extracting archive...",
             SoundpackPhase::Installing => "Installing soundpack...",
-            SoundpackPhase::Complete => "Installation complete!",
-            SoundpackPhase::Failed => "Installation failed",
+            SoundpackPhase::Deleting => "Deleting soundpack...",
+            SoundpackPhase::Complete => "Operation complete!",
+            SoundpackPhase::Failed => "Operation failed",
         }
     }
 }
@@ -819,10 +821,14 @@ mod tests {
             "Installing soundpack..."
         );
         assert_eq!(
-            SoundpackPhase::Complete.description(),
-            "Installation complete!"
+            SoundpackPhase::Deleting.description(),
+            "Deleting soundpack..."
         );
-        assert_eq!(SoundpackPhase::Failed.description(), "Installation failed");
+        assert_eq!(
+            SoundpackPhase::Complete.description(),
+            "Operation complete!"
+        );
+        assert_eq!(SoundpackPhase::Failed.description(), "Operation failed");
     }
 
     #[test]
