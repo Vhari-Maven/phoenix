@@ -1,13 +1,13 @@
 use anyhow::Result;
-use eframe::egui::{self, Color32, RichText, Rounding, Vec2};
+use eframe::egui::{self, RichText};
 use egui_commonmark::CommonMarkCache;
-use futures::FutureExt;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::backup::{self, AutoBackupType, BackupInfo, BackupPhase, BackupProgress};
+use crate::task::{poll_task, PollResult};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game::{self, GameInfo};
@@ -320,53 +320,44 @@ impl PhoenixApp {
 
     /// Poll the async releases task for completion
     fn poll_releases_task(&mut self, ctx: &egui::Context) {
-        if let Some(task) = &mut self.releases_task {
-            if task.is_finished() {
-                let task = self.releases_task.take().unwrap();
+        match poll_task(&mut self.releases_task) {
+            PollResult::Complete(Ok(Ok(result))) => {
                 let branch = self.fetching_branch.take();
+                let count = result.data.len();
+                self.rate_limit = result.rate_limit;
 
-                // Use now_or_never() since we know the task is finished
-                match task.now_or_never() {
-                    Some(Ok(Ok(result))) => {
-                        let count = result.data.len();
-                        // Update rate limit info
-                        self.rate_limit = result.rate_limit;
-
-                        // Store in appropriate list based on which branch we fetched
-                        let is_current_branch = branch.as_deref() == Some(self.config.game.branch.as_str());
-                        if branch.as_deref() == Some("stable") {
-                            self.stable_releases = result.data;
-                        } else {
-                            self.experimental_releases = result.data;
-                        }
-                        // Auto-select latest release if this is for the current branch
-                        if is_current_branch && count > 0 {
-                            self.selected_release_idx = Some(0);
-                        }
-                        self.status_message = format!("Fetched {} releases", count);
-                        tracing::info!("Fetched {} {} releases from GitHub", count, branch.as_deref().unwrap_or("unknown"));
-                    }
-                    Some(Ok(Err(e))) => {
-                        let msg = e.to_string();
-                        tracing::error!("Failed to fetch releases: {}", msg);
-                        self.releases_error = Some(msg.clone());
-                        self.status_message = format!("Error: {}", msg);
-                    }
-                    Some(Err(e)) => {
-                        let msg = e.to_string();
-                        tracing::error!("Task panicked: {}", msg);
-                        self.releases_error = Some(msg);
-                    }
-                    None => {
-                        // Shouldn't happen since we checked is_finished()
-                        tracing::warn!("Task not ready despite is_finished()");
-                    }
+                // Store in appropriate list based on which branch we fetched
+                let is_current_branch = branch.as_deref() == Some(self.config.game.branch.as_str());
+                if branch.as_deref() == Some("stable") {
+                    self.stable_releases = result.data;
+                } else {
+                    self.experimental_releases = result.data;
                 }
+                // Auto-select latest release if this is for the current branch
+                if is_current_branch && count > 0 {
+                    self.selected_release_idx = Some(0);
+                }
+                self.status_message = format!("Fetched {} releases", count);
+                tracing::info!("Fetched {} {} releases from GitHub", count, branch.as_deref().unwrap_or("unknown"));
                 self.releases_loading = false;
-            } else {
-                // Task still running, request repaint to keep polling
-                ctx.request_repaint();
             }
+            PollResult::Complete(Ok(Err(e))) => {
+                self.fetching_branch.take();
+                let msg = e.to_string();
+                tracing::error!("Failed to fetch releases: {}", msg);
+                self.releases_error = Some(msg.clone());
+                self.status_message = format!("Error: {}", msg);
+                self.releases_loading = false;
+            }
+            PollResult::Complete(Err(e)) => {
+                self.fetching_branch.take();
+                let msg = e.to_string();
+                tracing::error!("Task panicked: {}", msg);
+                self.releases_error = Some(msg);
+                self.releases_loading = false;
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
         }
     }
 
@@ -494,49 +485,37 @@ impl PhoenixApp {
         if let Some(rx) = &mut self.update_progress_rx {
             if rx.has_changed().unwrap_or(false) {
                 self.update_progress = rx.borrow_and_update().clone();
-
-                // Update status message based on phase
                 self.status_message = self.update_progress.phase.description().to_string();
             }
         }
 
         // Check if task is complete
-        if let Some(task) = &mut self.update_task {
-            if task.is_finished() {
-                let task = self.update_task.take().unwrap();
+        match poll_task(&mut self.update_task) {
+            PollResult::Complete(Ok(Ok(()))) => {
                 self.update_progress_rx = None;
-
-                match task.now_or_never() {
-                    Some(Ok(Ok(()))) => {
-                        self.update_progress.phase = UpdatePhase::Complete;
-                        self.status_message = "Update complete! Refreshing game info...".to_string();
-                        tracing::info!("Update completed successfully");
-
-                        // Refresh game info
-                        self.refresh_game_info();
-                    }
-                    Some(Ok(Err(e))) => {
-                        self.update_progress.phase = UpdatePhase::Failed;
-                        let msg = e.to_string();
-                        tracing::error!("Update failed: {}", msg);
-                        self.update_error = Some(msg.clone());
-                        self.status_message = format!("Update failed: {}", msg);
-                    }
-                    Some(Err(e)) => {
-                        self.update_progress.phase = UpdatePhase::Failed;
-                        let msg = format!("Update task panicked: {}", e);
-                        tracing::error!("{}", msg);
-                        self.update_error = Some(msg.clone());
-                        self.status_message = msg;
-                    }
-                    None => {
-                        tracing::warn!("Update task not ready despite is_finished()");
-                    }
-                }
-            } else {
-                // Task still running, keep polling
-                ctx.request_repaint();
+                self.update_progress.phase = UpdatePhase::Complete;
+                self.status_message = "Update complete! Refreshing game info...".to_string();
+                tracing::info!("Update completed successfully");
+                self.refresh_game_info();
             }
+            PollResult::Complete(Ok(Err(e))) => {
+                self.update_progress_rx = None;
+                self.update_progress.phase = UpdatePhase::Failed;
+                let msg = e.to_string();
+                tracing::error!("Update failed: {}", msg);
+                self.update_error = Some(msg.clone());
+                self.status_message = format!("Update failed: {}", msg);
+            }
+            PollResult::Complete(Err(e)) => {
+                self.update_progress_rx = None;
+                self.update_progress.phase = UpdatePhase::Failed;
+                let msg = format!("Update task panicked: {}", e);
+                tracing::error!("{}", msg);
+                self.update_error = Some(msg.clone());
+                self.status_message = msg;
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
         }
     }
 
@@ -673,10 +652,10 @@ impl eframe::App for PhoenixApp {
                 // Tab bar
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    self.render_tab(ui, Tab::Main, "Main");
-                    self.render_tab(ui, Tab::Backups, "Backups");
-                    self.render_tab(ui, Tab::Soundpacks, "Soundpacks");
-                    self.render_tab(ui, Tab::Settings, "Settings");
+                    crate::ui::render_tab(self, ui, Tab::Main, "Main");
+                    crate::ui::render_tab(self, ui, Tab::Backups, "Backups");
+                    crate::ui::render_tab(self, ui, Tab::Soundpacks, "Soundpacks");
+                    crate::ui::render_tab(self, ui, Tab::Settings, "Settings");
                 });
 
                 ui.add_space(16.0);
@@ -691,56 +670,11 @@ impl eframe::App for PhoenixApp {
             });
 
         // About dialog
-        self.render_about_dialog(ctx);
+        crate::ui::render_about_dialog(self, ctx);
     }
 }
 
 impl PhoenixApp {
-    /// Render a tab button
-    fn render_tab(&mut self, ui: &mut egui::Ui, tab: Tab, label: &str) {
-        let theme = &self.current_theme;
-        let is_active = self.active_tab == tab;
-
-        let (bg, text_color) = if is_active {
-            (theme.bg_medium, theme.accent)
-        } else {
-            (Color32::TRANSPARENT, theme.text_secondary)
-        };
-
-        let button = egui::Button::new(RichText::new(label).color(text_color))
-            .fill(bg)
-            .rounding(Rounding {
-                nw: 6.0,
-                ne: 6.0,
-                sw: 0.0,
-                se: 0.0,
-            })
-            .min_size(Vec2::new(80.0, 32.0));
-
-        if ui.add(button).clicked() {
-            let previous_tab = self.active_tab;
-            self.active_tab = tab;
-
-            // Load backup list when switching to Backups tab
-            if tab == Tab::Backups && previous_tab != Tab::Backups {
-                if let Some(ref dir) = self.config.game.directory {
-                    if self.backup_list.is_empty() && !self.backup_list_loading {
-                        self.refresh_backup_list(&PathBuf::from(dir));
-                    }
-                }
-            }
-
-            // Load soundpack list when switching to Soundpacks tab
-            if tab == Tab::Soundpacks && previous_tab != Tab::Soundpacks {
-                if let Some(ref dir) = self.config.game.directory {
-                    if self.soundpack_list.is_empty() && !self.soundpack_list_loading {
-                        self.refresh_soundpack_list(&PathBuf::from(dir));
-                    }
-                }
-            }
-        }
-    }
-
     /// Check if a backup operation is in progress
     pub(crate) fn is_backup_busy(&self) -> bool {
         self.backup_task.is_some() || self.backup_list_loading
@@ -866,70 +800,56 @@ impl PhoenixApp {
         }
 
         // Check if backup operation task is complete
-        if let Some(task) = &mut self.backup_task {
-            if task.is_finished() {
-                let task = self.backup_task.take().unwrap();
+        match poll_task(&mut self.backup_task) {
+            PollResult::Complete(Ok(Ok(()))) => {
                 self.backup_progress_rx = None;
+                self.backup_progress.phase = BackupPhase::Complete;
+                self.status_message = "Backup operation complete!".to_string();
+                tracing::info!("Backup operation completed successfully");
 
-                match task.now_or_never() {
-                    Some(Ok(Ok(()))) => {
-                        self.backup_progress.phase = BackupPhase::Complete;
-                        self.status_message = "Backup operation complete!".to_string();
-                        tracing::info!("Backup operation completed successfully");
-
-                        // Trigger backup list refresh
-                        if let Some(ref dir) = self.config.game.directory {
-                            self.refresh_backup_list(&PathBuf::from(dir));
-                        }
-                    }
-                    Some(Ok(Err(e))) => {
-                        self.backup_progress.phase = BackupPhase::Failed;
-                        let msg = e.to_string();
-                        tracing::error!("Backup operation failed: {}", msg);
-                        self.backup_error = Some(msg.clone());
-                        self.status_message = format!("Backup failed: {}", msg);
-                    }
-                    Some(Err(e)) => {
-                        self.backup_progress.phase = BackupPhase::Failed;
-                        let msg = format!("Backup task panicked: {}", e);
-                        tracing::error!("{}", msg);
-                        self.backup_error = Some(msg.clone());
-                        self.status_message = msg;
-                    }
-                    None => {
-                        tracing::warn!("Backup task not ready despite is_finished()");
-                    }
+                // Trigger backup list refresh
+                if let Some(ref dir) = self.config.game.directory {
+                    self.refresh_backup_list(&PathBuf::from(dir));
                 }
-            } else {
-                ctx.request_repaint();
             }
+            PollResult::Complete(Ok(Err(e))) => {
+                self.backup_progress_rx = None;
+                self.backup_progress.phase = BackupPhase::Failed;
+                let msg = e.to_string();
+                tracing::error!("Backup operation failed: {}", msg);
+                self.backup_error = Some(msg.clone());
+                self.status_message = format!("Backup failed: {}", msg);
+            }
+            PollResult::Complete(Err(e)) => {
+                self.backup_progress_rx = None;
+                self.backup_progress.phase = BackupPhase::Failed;
+                let msg = format!("Backup task panicked: {}", e);
+                tracing::error!("{}", msg);
+                self.backup_error = Some(msg.clone());
+                self.status_message = msg;
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
         }
 
         // Check if backup list loading task is complete
-        if let Some(task) = &mut self.backup_list_task {
-            if task.is_finished() {
-                let task = self.backup_list_task.take().unwrap();
+        match poll_task(&mut self.backup_list_task) {
+            PollResult::Complete(Ok(Ok(list))) => {
                 self.backup_list_loading = false;
-
-                match task.now_or_never() {
-                    Some(Ok(Ok(list))) => {
-                        self.backup_list = list;
-                        tracing::info!("Loaded {} backups", self.backup_list.len());
-                    }
-                    Some(Ok(Err(e))) => {
-                        tracing::error!("Failed to load backup list: {}", e);
-                        self.backup_error = Some(format!("Failed to load backups: {}", e));
-                    }
-                    Some(Err(e)) => {
-                        tracing::error!("Backup list task panicked: {}", e);
-                    }
-                    None => {
-                        tracing::warn!("Backup list task not ready despite is_finished()");
-                    }
-                }
-            } else {
-                ctx.request_repaint();
+                self.backup_list = list;
+                tracing::info!("Loaded {} backups", self.backup_list.len());
             }
+            PollResult::Complete(Ok(Err(e))) => {
+                self.backup_list_loading = false;
+                tracing::error!("Failed to load backup list: {}", e);
+                self.backup_error = Some(format!("Failed to load backups: {}", e));
+            }
+            PollResult::Complete(Err(e)) => {
+                self.backup_list_loading = false;
+                tracing::error!("Backup list task panicked: {}", e);
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
         }
     }
 
@@ -1006,160 +926,63 @@ impl PhoenixApp {
         }
 
         // Check main soundpack task
-        if let Some(ref task) = self.soundpack_task {
-            if task.is_finished() {
-                let task = self.soundpack_task.take().unwrap();
+        match poll_task(&mut self.soundpack_task) {
+            PollResult::Complete(Ok(Ok(installed))) => {
                 self.soundpack_progress_rx = None;
+                tracing::info!("Soundpack installed: {}", installed.name);
+                self.soundpack_progress.phase = SoundpackPhase::Complete;
 
-                match task.now_or_never() {
-                    Some(Ok(Ok(installed))) => {
-                        tracing::info!("Soundpack installed: {}", installed.name);
-                        self.soundpack_progress.phase = SoundpackPhase::Complete;
-
-                        // Refresh the list
-                        if let Some(dir) = &self.config.game.directory {
-                            self.refresh_soundpack_list(&PathBuf::from(dir));
-                        }
-                    }
-                    Some(Ok(Err(SoundpackError::Cancelled))) => {
-                        // This is the delete case - just refresh
-                        self.soundpack_progress = SoundpackProgress::default();
-                    }
-                    Some(Ok(Err(e))) => {
-                        tracing::error!("Soundpack operation failed: {}", e);
-                        self.soundpack_error = Some(e.to_string());
-                        self.soundpack_progress.phase = SoundpackPhase::Failed;
-                        self.soundpack_progress.error = Some(e.to_string());
-                    }
-                    Some(Err(e)) => {
-                        tracing::error!("Soundpack task panicked: {}", e);
-                        self.soundpack_error = Some("Task panicked".to_string());
-                        self.soundpack_progress.phase = SoundpackPhase::Failed;
-                    }
-                    None => {
-                        tracing::warn!("Soundpack task not ready despite is_finished()");
-                    }
+                // Refresh the list
+                if let Some(dir) = &self.config.game.directory {
+                    self.refresh_soundpack_list(&PathBuf::from(dir));
                 }
-            } else {
-                ctx.request_repaint();
             }
+            PollResult::Complete(Ok(Err(SoundpackError::Cancelled))) => {
+                self.soundpack_progress_rx = None;
+                // This is the delete case - just refresh
+                self.soundpack_progress = SoundpackProgress::default();
+            }
+            PollResult::Complete(Ok(Err(e))) => {
+                self.soundpack_progress_rx = None;
+                tracing::error!("Soundpack operation failed: {}", e);
+                self.soundpack_error = Some(e.to_string());
+                self.soundpack_progress.phase = SoundpackPhase::Failed;
+                self.soundpack_progress.error = Some(e.to_string());
+            }
+            PollResult::Complete(Err(e)) => {
+                self.soundpack_progress_rx = None;
+                tracing::error!("Soundpack task panicked: {}", e);
+                self.soundpack_error = Some("Task panicked".to_string());
+                self.soundpack_progress.phase = SoundpackPhase::Failed;
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
         }
 
         // Check list loading task
-        if let Some(ref task) = self.soundpack_list_task {
-            if task.is_finished() {
-                let task = self.soundpack_list_task.take().unwrap();
+        match poll_task(&mut self.soundpack_list_task) {
+            PollResult::Complete(Ok(Ok(list))) => {
                 self.soundpack_list_loading = false;
-
-                match task.now_or_never() {
-                    Some(Ok(Ok(list))) => {
-                        self.soundpack_list = list;
-                        // Preserve selection if still valid
-                        if let Some(idx) = self.soundpack_installed_idx {
-                            if idx >= self.soundpack_list.len() {
-                                self.soundpack_installed_idx = None;
-                            }
-                        }
-                    }
-                    Some(Ok(Err(e))) => {
-                        tracing::error!("Failed to load soundpack list: {}", e);
-                        self.soundpack_error = Some(e.to_string());
-                    }
-                    Some(Err(e)) => {
-                        tracing::error!("Soundpack list task panicked: {}", e);
-                        self.soundpack_error = Some("Task panicked".to_string());
-                    }
-                    None => {
-                        tracing::warn!("Soundpack list task not ready despite is_finished()");
+                self.soundpack_list = list;
+                // Preserve selection if still valid
+                if let Some(idx) = self.soundpack_installed_idx {
+                    if idx >= self.soundpack_list.len() {
+                        self.soundpack_installed_idx = None;
                     }
                 }
-            } else {
-                ctx.request_repaint();
             }
+            PollResult::Complete(Ok(Err(e))) => {
+                self.soundpack_list_loading = false;
+                tracing::error!("Failed to load soundpack list: {}", e);
+                self.soundpack_error = Some(e.to_string());
+            }
+            PollResult::Complete(Err(e)) => {
+                self.soundpack_list_loading = false;
+                tracing::error!("Soundpack list task panicked: {}", e);
+                self.soundpack_error = Some("Task panicked".to_string());
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
         }
-    }
-
-    /// Render the About dialog
-    fn render_about_dialog(&mut self, ctx: &egui::Context) {
-        if !self.show_about_dialog {
-            return;
-        }
-
-        let theme = &self.current_theme;
-
-        egui::Window::new("About Phoenix")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .fixed_size([300.0, 280.0])
-            .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(8.0);
-
-                    // App name
-                    ui.label(
-                        RichText::new("Phoenix")
-                            .size(24.0)
-                            .strong()
-                            .color(theme.accent)
-                    );
-
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("CDDA Game Launcher")
-                            .size(14.0)
-                            .color(theme.text_secondary)
-                    );
-
-                    ui.add_space(12.0);
-
-                    // Version
-                    ui.label(
-                        RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                            .color(theme.text_muted)
-                    );
-
-                    ui.add_space(12.0);
-
-                    // Description
-                    ui.label(
-                        RichText::new("A fast, native launcher for")
-                            .color(theme.text_secondary)
-                    );
-                    ui.label(
-                        RichText::new("Cataclysm: Dark Days Ahead")
-                            .color(theme.text_secondary)
-                    );
-
-                    ui.add_space(12.0);
-
-                    // Links (separate lines for proper centering)
-                    if ui.link("GitHub").clicked() {
-                        let _ = open::that("https://github.com/Vhari-Maven/phoenix");
-                    }
-                    ui.add_space(4.0);
-                    if ui.link("CDDA Website").clicked() {
-                        let _ = open::that("https://cataclysmdda.org/");
-                    }
-
-                    ui.add_space(12.0);
-
-                    // Built with
-                    ui.label(
-                        RichText::new("Built with Rust + egui")
-                            .size(11.0)
-                            .color(theme.text_muted)
-                    );
-
-                    ui.add_space(12.0);
-
-                    // Close button
-                    if ui.button("Close").clicked() {
-                        self.show_about_dialog = false;
-                    }
-
-                    ui.add_space(8.0);
-                });
-            });
     }
 }

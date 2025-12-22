@@ -9,6 +9,7 @@ mod game;
 mod github;
 mod migration;
 mod soundpack;
+mod task;
 mod theme;
 mod ui;
 mod update;

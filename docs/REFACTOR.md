@@ -6,29 +6,13 @@ This document tracks refactoring work to improve maintainability after MVP compl
 
 ## Next Steps
 
-**Goal:** Reduce `app.rs` from ~1,165 to ~700 lines.
+**Goal:** Reduce `app.rs` from ~988 to ~700 lines.
 
 | Priority | Task | Savings | Complexity |
 |----------|------|---------|------------|
-| 1 | Extract `render_tab()` + `render_about_dialog()` to `ui/components.rs` | ~120 lines | Easy |
-| 2 | Create generic task polling helper (`src/task.rs`) | ~100 lines | Easy |
-| 3 | Group state into nested structs (Phase 3) | ~200 lines | Medium |
+| 1 | Group state into nested structs (Phase 3) | ~200 lines | Medium |
 
-### Task 1: Extract UI Components
-
-Move remaining UI helpers from `app.rs` to `ui/components.rs`:
-- `render_tab()` (~45 lines) - Tab button rendering
-- `render_about_dialog()` (~80 lines) - About dialog
-
-### Task 2: Generic Task Polling
-
-The `poll_*_task()` pattern repeats 4 times. Create a helper:
-```rust
-// src/task.rs
-pub fn poll_task<T, E>(task: &mut Option<JoinHandle<Result<T, E>>>) -> Option<Result<T, E>>
-```
-
-### Task 3: State Structs (Phase 3)
+### Task: State Structs (Phase 3)
 
 Group `PhoenixApp`'s 50+ fields into nested structs:
 ```rust
@@ -53,11 +37,13 @@ Each state struct would own its `poll()` method, moving ~200 lines out of `app.r
 
 | File | Lines | Status |
 |------|-------|--------|
-| `app.rs` | ~1,165 | Improved (was ~2,700) |
+| `app.rs` | ~988 | Improved (was ~2,700) |
 | `ui/soundpacks_tab.rs` | ~576 | Extracted |
 | `ui/main_tab.rs` | ~502 | Extracted |
 | `ui/backups_tab.rs` | ~417 | Extracted |
 | `ui/settings_tab.rs` | ~323 | Extracted |
+| `ui/components.rs` | ~135 | New - shared UI components |
+| `task.rs` | ~58 | New - task polling helper |
 | `soundpack.rs` | ~900 | Good |
 | `update.rs` | ~750 | Good |
 | `backup.rs` | ~750 | Good |
@@ -74,9 +60,11 @@ Each state struct would own its `poll()` method, moving ~200 lines out of `app.r
 ```
 src/
 ├── main.rs              # Entry point
-├── app.rs               # PhoenixApp state + eframe::App impl (~1,165 lines)
+├── app.rs               # PhoenixApp state + eframe::App impl (~988 lines)
+├── task.rs              # Generic task polling helper
 ├── ui/                  # Extracted UI modules
 │   ├── mod.rs
+│   ├── components.rs    # Shared UI components (tabs, dialogs)
 │   ├── main_tab.rs      # Game info, updates, changelog
 │   ├── backups_tab.rs   # Backup management
 │   ├── soundpacks_tab.rs# Soundpack management
@@ -113,13 +101,28 @@ Extracted UI rendering from `app.rs` into `src/ui/` modules:
 **Design decisions:**
 - Used free functions `fn render_xxx(app: &mut PhoenixApp, ui: &mut egui::Ui)` instead of traits
 - Combined update section into `main_tab.rs` (matches actual UI structure)
-- Left `render_tab()` and `render_about_dialog()` in app.rs (tightly coupled to eframe::App)
 
 ### Build Warnings Cleanup (Done)
 
 Removed 27 unused items (error variants, struct fields, functions, constants, types).
 
 **Result:** Clean build with 0 warnings, 55 tests passing.
+
+### Phase 1.5: UI Components & Task Helper (Done)
+
+Extracted remaining UI helpers and created task polling abstraction:
+
+| Module | Lines | Contents |
+|--------|-------|----------|
+| `ui/components.rs` | 135 | `render_tab()`, `render_about_dialog()` |
+| `task.rs` | 58 | Generic `poll_task()` helper with `PollResult` enum |
+
+**Result:** `app.rs` reduced from ~1,165 to ~988 lines (15% reduction)
+
+**Design decisions:**
+- Moved `render_tab()` and `render_about_dialog()` to `ui/components.rs`
+- Created `PollResult` enum to encapsulate task polling states (NoTask, Pending, Complete)
+- Refactored all 4 poll functions to use the new helper, reducing boilerplate
 
 ---
 
