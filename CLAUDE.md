@@ -2,14 +2,15 @@
 
 A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 
-## Project Overview
+## Branch: refactor/maintainability
 
-This is a ground-up rebuild of the CDDA Game Launcher, aiming for sub-second startup times compared to the original Python/Qt launcher's 10-15 second load time.
+This branch focuses on improving code organization and maintainability after MVP completion. The primary goal is extracting UI code from the monolithic `app.rs` into separate modules.
 
 ## Documentation
 
-- [docs/PLAN.md](docs/PLAN.md) - Development plan with spiral roadmap and current progress
-- [docs/ANALYSIS.md](docs/ANALYSIS.md) - Comprehensive analysis of the original Python launcher, including features, APIs, data models, and migration notes
+- [docs/REFACTOR.md](docs/REFACTOR.md) - **Refactoring plan and progress** (start here)
+- [docs/PLAN.md](docs/PLAN.md) - Original development plan with spiral roadmap
+- [docs/ANALYSIS.md](docs/ANALYSIS.md) - Analysis of the original Python launcher
 
 ## Reference
 
@@ -65,59 +66,62 @@ phoenix/
 │   ├── icon.png         # Embedded window icon
 │   └── soundpacks.json  # Embedded soundpack repository
 ├── docs/
+│   ├── REFACTOR.md      # Refactoring plan (this branch)
 │   ├── PLAN.md          # Development roadmap
 │   └── ANALYSIS.md      # Original launcher analysis
 ├── reference/           # Original Python source (gitignored)
 ├── src/
 │   ├── main.rs          # Entry point, logging setup, icon loading
-│   ├── app.rs           # Application state, UI, tab system
+│   ├── app.rs           # Application state + UI (~2,700 lines - needs splitting)
+│   ├── ui/              # [PLANNED] Extracted UI modules
+│   │   ├── mod.rs       #   Exports, common helpers
+│   │   ├── main_tab.rs  #   Game section, launch button
+│   │   ├── update_tab.rs#   Branch selection, releases, changelog
+│   │   ├── backups_tab.rs#  Backup list, create/restore/delete
+│   │   ├── soundpacks_tab.rs# Two-column layout, install/delete
+│   │   ├── settings_tab.rs#  Appearance, behavior, game settings
+│   │   └── components.rs#   Shared dialogs, progress displays
 │   ├── backup.rs        # Save backup creation, restoration, auto-backup
 │   ├── config.rs        # Configuration management (TOML)
 │   ├── db.rs            # SQLite database for version caching
 │   ├── game.rs          # Game detection and launching
 │   ├── github.rs        # GitHub API client, release fetching
-│   ├── migration.rs     # Smart migration for updates (identity-based content detection)
-│   ├── soundpack.rs     # Soundpack management (download, install, enable/disable)
+│   ├── migration.rs     # Smart migration for updates
+│   ├── soundpack.rs     # Soundpack management
 │   ├── theme.rs         # Theme system with color presets
 │   └── update.rs        # Download, extract, backup, restore logic
+├── build.rs             # Windows resource embedding (icon, version info)
 ├── Cargo.toml
 ├── CLAUDE.md
-├── README.md            # User-facing documentation
-└── LICENSE              # MIT License
+├── README.md
+└── LICENSE
 ```
 
-## Development Progress
+## Refactoring Progress
 
-See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
+See [docs/REFACTOR.md](docs/REFACTOR.md) for the full refactoring plan.
 
 **Completed:**
-- Spiral 1: Game Launching - browse, detect, launch game
-- Spiral 2: Version Detection - SHA256 lookup, SQLite caching, VERSION.txt fallback
-- Spiral 3: GitHub Integration - fetch releases, markdown changelog, rate limiting
-- Spiral 3.5: Theme System - 5 color presets, improved UI layout, custom icon
-- Spiral 4: Download & Update - progress tracking, smart migration, performance optimization
-  - Update time reduced from ~54s to ~18s via deferred backup deletion
-  - Background cleanup doesn't block user
-- Spiral 5: Backup System - full backup management
-  - Manual and automatic backups (before updates)
-  - Backup list with 7-column metadata display
-  - Restore with optional pre-restore backup
-  - Configurable retention and compression
-- Spiral 6: Soundpacks - full soundpack management
-  - Two-column UI (installed vs repository)
-  - Download and install from embedded repository
-  - Enable/disable soundpacks
-  - Delete with confirmation
-  - Support for ZIP, RAR, 7z archives
-  - Browser download fallback
-- Spiral 7: Polish
-  - Window size/position persistence
-  - Single instance enforcement
-  - About dialog
-  - Settings UI improvements
-  - README, LICENSE, GitHub Actions release workflow
+- Build warnings cleanup (27 warnings eliminated)
+- Executable icon embedding via build.rs
+- Console window hidden in release builds
 
-**Status:** MVP complete. All core features implemented.
+**In Progress:**
+- Phase 1: UI Module Extraction (splitting app.rs into ui/ modules)
+
+**Planned:**
+- Phase 2: Deduplication (format_size, progress rendering, async polling)
+- Phase 3: State Organization (group PhoenixApp's 50+ fields)
+- Phase 4: Service Abstraction (optional)
+
+## MVP Status
+
+The MVP is complete on the `main` branch. All core features work:
+- Game detection, launching, version identification
+- Update downloads with smart migration
+- Backup/restore system
+- Soundpack management
+- Theme system
 
 ## Key External APIs
 
@@ -159,3 +163,11 @@ skip_backup_before_restore = false # Skip pre-restore backup
 - Use `tracing` for logging
 - Prefer async/await for I/O operations
 - Keep UI responsive - never block the main thread
+
+## Refactoring Guidelines
+
+- **Run tests after each change:** `cargo test`
+- **Keep commits small and focused** - one logical change per commit
+- **Don't change behavior** - refactoring should be purely structural
+- **Preserve public APIs** - PhoenixApp's interface should remain stable
+- **Extract, don't rewrite** - move code as-is first, then clean up
