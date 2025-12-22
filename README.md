@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.svg" width="128" height="128" alt="Phoenix">
+</p>
+
 # Phoenix - CDDA Game Launcher
 
 A fast, native game launcher for [Cataclysm: Dark Days Ahead](https://cataclysmdda.org/), built in Rust.
