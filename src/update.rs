@@ -634,6 +634,30 @@ async fn execute_migration_plan(
         }
     }
 
+    // Restore custom files within matched soundpacks (smart merge)
+    if !plan.soundpack_merges.is_empty() {
+        let mut file_count = 0;
+        for merge_info in &plan.soundpack_merges {
+            for relative_path in &merge_info.custom_files {
+                let src = merge_info.old_path.join(relative_path);
+                let dst = merge_info.new_path.join(relative_path);
+
+                // Only copy if source exists and destination doesn't
+                if src.exists() && !dst.exists() {
+                    // Ensure parent directory exists (for custom subdirectories)
+                    if let Some(parent) = dst.parent() {
+                        tokio::fs::create_dir_all(parent).await?;
+                    }
+                    tokio::fs::copy(&src, &dst).await?;
+                    file_count += 1;
+                }
+            }
+        }
+        if file_count > 0 {
+            restored_counts.push(format!("{} soundpack files", file_count));
+        }
+    }
+
     // Restore custom fonts
     if !plan.custom_fonts.is_empty() {
         let font_dir = game_dir.join("font");

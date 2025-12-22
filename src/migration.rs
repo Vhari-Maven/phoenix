@@ -36,6 +36,23 @@ pub struct SoundpackInfo {
     pub path: PathBuf,
 }
 
+/// Represents files to merge into an official soundpack during migration.
+///
+/// When a soundpack exists in both old and new versions (same NAME),
+/// this tracks custom files the user added that should be preserved.
+#[derive(Debug, Clone)]
+pub struct SoundpackMergeInfo {
+    /// Soundpack name (matching both old and new versions)
+    #[allow(dead_code)] // Used for debug logging
+    pub name: String,
+    /// Path to the soundpack in the old (archived) version
+    pub old_path: PathBuf,
+    /// Path to the soundpack in the new version
+    pub new_path: PathBuf,
+    /// Custom files to restore (relative paths within the soundpack)
+    pub custom_files: Vec<PathBuf>,
+}
+
 /// Result of analyzing directories for custom content
 #[derive(Debug, Default)]
 pub struct MigrationPlan {
@@ -45,8 +62,10 @@ pub struct MigrationPlan {
     pub custom_user_mods: Vec<ModInfo>,
     /// Custom tilesets to restore
     pub custom_tilesets: Vec<TilesetInfo>,
-    /// Custom soundpacks to restore
+    /// Custom soundpacks to restore (not in new version at all)
     pub custom_soundpacks: Vec<SoundpackInfo>,
+    /// Soundpacks with custom files to merge (exist in both versions)
+    pub soundpack_merges: Vec<SoundpackMergeInfo>,
     /// Custom fonts to restore (files not in new version)
     pub custom_fonts: Vec<PathBuf>,
     /// Custom data/fonts to restore
@@ -286,6 +305,90 @@ pub fn find_custom_soundpacks(
         .collect()
 }
 
+/// Recursively scan a soundpack directory for audio and JSON files.
+///
+/// Returns a set of relative paths (from the soundpack root) for files
+/// with extensions: .ogg, .wav, .json
+fn scan_soundpack_files_recursive(
+    base_dir: &Path,
+    current_dir: &Path,
+    files: &mut HashSet<PathBuf>,
+) {
+    let Ok(entries) = std::fs::read_dir(current_dir) else {
+        return;
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_soundpack_files_recursive(base_dir, &path, files);
+        } else if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                let ext_lower = ext.to_lowercase();
+                // Only track audio and JSON files
+                if matches!(ext_lower.as_str(), "ogg" | "wav" | "json") {
+                    if let Ok(relative) = path.strip_prefix(base_dir) {
+                        files.insert(relative.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Scan a soundpack directory and return set of relative file paths.
+///
+/// Only includes audio files (.ogg, .wav) and JSON files (.json).
+pub fn scan_soundpack_files(soundpack_dir: &Path) -> HashSet<PathBuf> {
+    let mut files = HashSet::new();
+
+    if !soundpack_dir.exists() || !soundpack_dir.is_dir() {
+        return files;
+    }
+
+    scan_soundpack_files_recursive(soundpack_dir, soundpack_dir, &mut files);
+    files
+}
+
+/// Find custom files within a soundpack (files in old but not in new).
+pub fn find_custom_soundpack_files(old_soundpack: &Path, new_soundpack: &Path) -> Vec<PathBuf> {
+    let old_files = scan_soundpack_files(old_soundpack);
+    let new_files = scan_soundpack_files(new_soundpack);
+
+    old_files.difference(&new_files).cloned().collect()
+}
+
+/// Find soundpacks that exist in both versions and have custom files to merge.
+pub fn find_soundpack_merges(
+    old_soundpacks: &HashMap<String, SoundpackInfo>,
+    new_soundpacks: &HashMap<String, SoundpackInfo>,
+) -> Vec<SoundpackMergeInfo> {
+    let mut merges = Vec::new();
+
+    for (name, old_info) in old_soundpacks {
+        if let Some(new_info) = new_soundpacks.get(name) {
+            let custom_files = find_custom_soundpack_files(&old_info.path, &new_info.path);
+
+            if !custom_files.is_empty() {
+                tracing::debug!(
+                    "Soundpack '{}' has {} custom files to merge",
+                    name,
+                    custom_files.len()
+                );
+
+                merges.push(SoundpackMergeInfo {
+                    name: name.clone(),
+                    old_path: old_info.path.clone(),
+                    new_path: new_info.path.clone(),
+                    custom_files,
+                });
+            }
+        }
+    }
+
+    merges
+}
+
 /// Find custom fonts (filenames in old but not in new)
 pub fn find_custom_fonts(
     old_fonts: &HashSet<String>,
@@ -348,12 +451,17 @@ pub fn create_migration_plan(previous_version_dir: &Path, game_dir: &Path) -> Mi
 
     let old_soundpacks = scan_soundpacks_directory(&old_sound_dir);
     let new_soundpacks = scan_soundpacks_directory(&new_sound_dir);
+
+    // Custom soundpacks (not in new version at all)
     plan.custom_soundpacks = find_custom_soundpacks(&old_soundpacks, &new_soundpacks);
 
+    // Soundpacks in both versions that have custom files to merge
+    plan.soundpack_merges = find_soundpack_merges(&old_soundpacks, &new_soundpacks);
+
     tracing::info!(
-        "Found {} custom soundpacks out of {} total soundpacks",
+        "Found {} custom soundpacks and {} soundpacks with custom files to merge",
         plan.custom_soundpacks.len(),
-        old_soundpacks.len()
+        plan.soundpack_merges.len()
     );
 
     // === FONTS (font/) ===
@@ -688,5 +796,82 @@ mod tests {
         // Should find only custom_mod as needing restoration
         assert_eq!(plan.custom_mods.len(), 1);
         assert_eq!(plan.custom_mods[0].id, "my_custom_mod");
+    }
+
+    #[test]
+    fn test_scan_soundpack_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let soundpack_dir = temp_dir.path().join("test_soundpack");
+        fs::create_dir_all(soundpack_dir.join("music")).unwrap();
+        fs::create_dir_all(soundpack_dir.join("guns")).unwrap();
+
+        // Create various files
+        fs::write(soundpack_dir.join("soundpack.txt"), "NAME Test\n").unwrap();
+        fs::write(soundpack_dir.join("soundset.json"), "{}").unwrap();
+        fs::write(soundpack_dir.join("music").join("theme.ogg"), b"audio").unwrap();
+        fs::write(soundpack_dir.join("guns").join("shot.wav"), b"audio").unwrap();
+        fs::write(soundpack_dir.join("readme.txt"), "text").unwrap(); // Should be ignored
+
+        let files = scan_soundpack_files(&soundpack_dir);
+
+        // Should have 3 files: soundset.json, theme.ogg, shot.wav
+        // readme.txt and soundpack.txt should not be included
+        assert_eq!(files.len(), 3);
+        assert!(files.contains(&PathBuf::from("soundset.json")));
+        assert!(files.contains(&PathBuf::from("music").join("theme.ogg")));
+        assert!(files.contains(&PathBuf::from("guns").join("shot.wav")));
+    }
+
+    #[test]
+    fn test_find_custom_soundpack_files() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Old soundpack with custom music
+        let old_dir = temp_dir.path().join("old_soundpack");
+        fs::create_dir_all(old_dir.join("music")).unwrap();
+        fs::write(old_dir.join("soundset.json"), "{}").unwrap();
+        fs::write(old_dir.join("music").join("official.ogg"), b"audio").unwrap();
+        fs::write(old_dir.join("music").join("custom_music.ogg"), b"custom").unwrap();
+
+        // New soundpack (official only)
+        let new_dir = temp_dir.path().join("new_soundpack");
+        fs::create_dir_all(new_dir.join("music")).unwrap();
+        fs::write(new_dir.join("soundset.json"), "{}").unwrap();
+        fs::write(new_dir.join("music").join("official.ogg"), b"audio").unwrap();
+
+        let custom = find_custom_soundpack_files(&old_dir, &new_dir);
+
+        assert_eq!(custom.len(), 1);
+        assert!(custom.contains(&PathBuf::from("music").join("custom_music.ogg")));
+    }
+
+    #[test]
+    fn test_create_migration_plan_with_soundpack_merge() {
+        let temp_dir = TempDir::new().unwrap();
+        let previous_dir = temp_dir.path().join(".phoenix_archive");
+        let game_dir = temp_dir.path().join("game");
+
+        // Set up old soundpack with custom file
+        let old_soundpack = previous_dir.join("data/sound/CC-Sounds");
+        fs::create_dir_all(old_soundpack.join("music")).unwrap();
+        fs::write(old_soundpack.join("soundpack.txt"), "NAME CC-Sounds\n").unwrap();
+        fs::write(old_soundpack.join("soundset.json"), "{}").unwrap();
+        fs::write(old_soundpack.join("music").join("custom.ogg"), b"custom").unwrap();
+
+        // Set up new soundpack (same name, no custom file)
+        let new_soundpack = game_dir.join("data/sound/CC-Sounds");
+        fs::create_dir_all(new_soundpack.join("music")).unwrap();
+        fs::write(new_soundpack.join("soundpack.txt"), "NAME CC-Sounds\n").unwrap();
+        fs::write(new_soundpack.join("soundset.json"), "{}").unwrap();
+
+        let plan = create_migration_plan(&previous_dir, &game_dir);
+
+        // Should have no custom soundpacks (same NAME exists in both)
+        assert!(plan.custom_soundpacks.is_empty());
+
+        // Should have one merge with one custom file
+        assert_eq!(plan.soundpack_merges.len(), 1);
+        assert_eq!(plan.soundpack_merges[0].name, "CC-Sounds");
+        assert_eq!(plan.soundpack_merges[0].custom_files.len(), 1);
     }
 }
