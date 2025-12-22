@@ -37,10 +37,29 @@ cargo build
 cargo run
 ```
 
+## Releases
+
+Releases are automated via GitHub Actions. To create a new release:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+This triggers the workflow which:
+1. Builds on Windows
+2. Creates a zip with `phoenix.exe`, `README.md`, and `LICENSE`
+3. Publishes to GitHub Releases
+
+Tags containing `alpha`, `beta`, or `rc` are marked as prereleases.
+
 ## Project Structure
 
 ```
 phoenix/
+├── .github/
+│   └── workflows/
+│       └── release.yml  # Automated release builds on version tags
 ├── assets/
 │   ├── icon.svg         # Phoenix flame icon source
 │   ├── icon.png         # Embedded window icon
@@ -62,7 +81,9 @@ phoenix/
 │   ├── theme.rs         # Theme system with color presets
 │   └── update.rs        # Download, extract, backup, restore logic
 ├── Cargo.toml
-└── CLAUDE.md
+├── CLAUDE.md
+├── README.md            # User-facing documentation
+└── LICENSE              # MIT License
 ```
 
 ## Development Progress
@@ -89,13 +110,14 @@ See [docs/PLAN.md](docs/PLAN.md) for detailed spiral roadmap.
   - Delete with confirmation
   - Support for ZIP, RAR, 7z archives
   - Browser download fallback
-- Spiral 7: Polish (in progress)
+- Spiral 7: Polish
   - Window size/position persistence
   - Single instance enforcement
   - About dialog
   - Settings UI improvements
+  - README, LICENSE, GitHub Actions release workflow
 
-**Next:** Spiral 7 - remaining polish (error dialogs, testing)
+**Status:** MVP complete. All core features implemented.
 
 ## Key External APIs
 
