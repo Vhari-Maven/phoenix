@@ -49,5 +49,13 @@
         "url": "https://github.com/damalsk/damalsksoundpack/archive/v0.2.zip",
         "size": 164342384,
         "homepage": "https://github.com/damalsk/damalsksoundpack"
+    },
+    {
+        "type": "direct_download",
+        "viewname": "Otopack+ModsUpdates",
+        "name": "Otopack+ModsUpdates",
+        "url": "https://github.com/Kenan2000/Otopack-Mods-Updates/archive/refs/tags/Otopack%2BModsUpdates_09.03.2024.zip",
+        "size": 572212053,
+        "homepage": "https://github.com/Kenan2000/Otopack-Mods-Updates"
     }
 ]
