@@ -151,8 +151,11 @@ impl SoundpackState {
             }
             PollResult::Complete(Ok(Err(SoundpackError::Cancelled))) => {
                 self.progress_rx = None;
-                // This is the delete case - just refresh
-                self.progress = SoundpackProgress::default();
+                // This is the delete case - show complete and refresh the list
+                self.progress.phase = SoundpackPhase::Complete;
+                if let Some(dir) = game_dir {
+                    self.refresh_list(dir);
+                }
             }
             PollResult::Complete(Ok(Err(e))) => {
                 self.progress_rx = None;

@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, Rounding, Stroke, Visuals};
+use eframe::egui::{self, Color32, Stroke, Visuals};
 use serde::{Deserialize, Serialize};
 
 /// Available theme presets
@@ -218,35 +218,30 @@ impl Theme {
         visuals.widgets.noninteractive.weak_bg_fill = self.bg_light;
         visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, self.border);
         visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, self.text_secondary);
-        visuals.widgets.noninteractive.rounding = Rounding::same(4.0);
 
         // Inactive widgets
         visuals.widgets.inactive.bg_fill = self.bg_medium;
         visuals.widgets.inactive.weak_bg_fill = self.bg_light;
         visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, self.border);
         visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, self.text_primary);
-        visuals.widgets.inactive.rounding = Rounding::same(4.0);
 
         // Hovered widgets
         visuals.widgets.hovered.bg_fill = self.bg_light;
         visuals.widgets.hovered.weak_bg_fill = self.bg_light;
         visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, self.accent);
         visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, self.text_primary);
-        visuals.widgets.hovered.rounding = Rounding::same(4.0);
 
         // Active/pressed widgets
         visuals.widgets.active.bg_fill = self.accent_muted;
         visuals.widgets.active.weak_bg_fill = self.accent_muted;
         visuals.widgets.active.bg_stroke = Stroke::new(1.0, self.accent_hover);
         visuals.widgets.active.fg_stroke = Stroke::new(1.0, self.text_primary);
-        visuals.widgets.active.rounding = Rounding::same(4.0);
 
         // Open widgets (dropdowns, etc)
         visuals.widgets.open.bg_fill = self.bg_light;
         visuals.widgets.open.weak_bg_fill = self.bg_light;
         visuals.widgets.open.bg_stroke = Stroke::new(1.0, self.accent);
         visuals.widgets.open.fg_stroke = Stroke::new(1.0, self.text_primary);
-        visuals.widgets.open.rounding = Rounding::same(4.0);
 
         // Selection
         visuals.selection.bg_fill = self.selection;
@@ -256,12 +251,8 @@ impl Theme {
         visuals.hyperlink_color = self.accent;
 
         // Window styling
-        visuals.window_rounding = Rounding::same(8.0);
         visuals.window_stroke = Stroke::new(1.0, self.border);
         visuals.window_shadow = egui::epaint::Shadow::NONE;
-
-        // Menu styling
-        visuals.menu_rounding = Rounding::same(6.0);
 
         // Popup styling
         visuals.popup_shadow = egui::epaint::Shadow::NONE;

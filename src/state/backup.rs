@@ -115,7 +115,7 @@ impl BackupState {
     }
 
     /// Refresh the backup list
-    pub fn refresh_list(&mut self, game_dir: &Path) {
+    pub fn refresh_list(&mut self) {
         if self.list_loading || self.list_task.is_some() {
             return;
         }
@@ -124,27 +124,24 @@ impl BackupState {
         self.selected_idx = None;
         self.error = None;
 
-        let game_dir = game_dir.to_path_buf();
-
         self.list_task = Some(tokio::spawn(async move {
-            backup::list_backups(&game_dir).await
+            backup::list_backups().await
         }));
     }
 
     /// Delete the selected backup
-    pub fn delete_selected(&mut self, game_dir: &Path) -> Option<StateEvent> {
+    pub fn delete_selected(&mut self) -> Option<StateEvent> {
         let idx = self.selected_idx?;
         let backup = self.list.get(idx)?;
 
         let backup_name = backup.name.clone();
         let backup_name_for_status = backup_name.clone();
-        let game_dir = game_dir.to_path_buf();
 
         self.error = None;
         tracing::info!("Deleting backup: {}", backup_name);
 
         self.task = Some(tokio::spawn(async move {
-            backup::delete_backup(&game_dir, &backup_name).await
+            backup::delete_backup(&backup_name).await
         }));
 
         self.selected_idx = None;
@@ -183,7 +180,7 @@ impl BackupState {
     }
 
     /// Poll backup tasks for progress and completion
-    pub fn poll(&mut self, ctx: &egui::Context, game_dir: Option<&Path>) -> Vec<StateEvent> {
+    pub fn poll(&mut self, ctx: &egui::Context) -> Vec<StateEvent> {
         let mut events = Vec::new();
 
         // Update progress from channel
@@ -205,9 +202,7 @@ impl BackupState {
                 events.push(StateEvent::LogInfo("Backup operation completed successfully".to_string()));
 
                 // Trigger backup list refresh
-                if let Some(dir) = game_dir {
-                    self.refresh_list(dir);
-                }
+                self.refresh_list();
             }
             PollResult::Complete(Ok(Err(e))) => {
                 self.progress_rx = None;

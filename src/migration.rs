@@ -653,7 +653,7 @@ mod tests {
     #[test]
     fn test_create_migration_plan() {
         let temp_dir = TempDir::new().unwrap();
-        let previous_dir = temp_dir.path().join("previous_version");
+        let previous_dir = temp_dir.path().join(".phoenix_archive");
         let game_dir = temp_dir.path().join("game");
 
         // Set up previous version with custom mod

@@ -35,9 +35,9 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
     let is_busy = app.is_backup_busy();
 
     // Manual backup section
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(theme.bg_medium)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .stroke(egui::Stroke::new(1.0, theme.border))
         .show(ui, |ui| {
@@ -80,9 +80,9 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
     ui.add_space(12.0);
 
     // Backup list section
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(theme.bg_medium)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .stroke(egui::Stroke::new(1.0, theme.border))
         .show(ui, |ui| {
@@ -101,7 +101,7 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         .add_enabled(!is_busy, egui::Button::new("Refresh"))
                         .clicked()
                     {
-                        app.refresh_backup_list(&game_dir);
+                        app.refresh_backup_list();
                     }
                 });
             });
@@ -302,7 +302,7 @@ fn render_backup_confirm_dialogs(
                                 app.backup.confirm_delete = false;
                             }
                             if ui.button("Delete").clicked() {
-                                app.delete_selected_backup(game_dir);
+                                app.delete_selected_backup();
                                 app.backup.confirm_delete = false;
                             }
                         });

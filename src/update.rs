@@ -17,11 +17,10 @@ use crate::migration::{self, MigrationPlan, CONFIG_SKIP_FILES};
 
 /// Directories to always restore completely (no smart filtering)
 const SIMPLE_RESTORE_DIRS: &[&str] = &[
-    "save",         // Player saves - CRITICAL
-    "save_backups", // User backup archives
-    "templates",    // Character templates
-    "memorial",     // Memorial files
-    "graveyard",    // Graveyard data
+    "save",      // Player saves - CRITICAL
+    "templates", // Character templates
+    "memorial",  // Memorial files
+    "graveyard", // Graveyard data
 ];
 
 /// Current phase of the update process
@@ -208,18 +207,18 @@ pub async fn install_update(
     remove_previous_version: bool,
 ) -> Result<()> {
     let update_start = Instant::now();
-    let previous_version_dir = game_dir.join("previous_version");
-    let old_backup_dir = game_dir.join("previous_version_old");
+    let archive_dir = game_dir.join(".phoenix_archive");
+    let old_archive_dir = game_dir.join(".phoenix_archive_old");
 
-    // Phase 1: Backup current installation (fast - uses rename, defers deletion)
+    // Phase 1: Archive current installation (fast - uses rename, defers deletion)
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::BackingUp,
         ..Default::default()
     });
 
     let phase_start = Instant::now();
-    backup_current_installation(&game_dir, &previous_version_dir, &old_backup_dir, prevent_save_move).await?;
-    tracing::info!("Backup complete in {:.1}s", phase_start.elapsed().as_secs_f32());
+    archive_current_installation(&game_dir, &archive_dir, &old_archive_dir, prevent_save_move).await?;
+    tracing::info!("Archive complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
     // Phase 2: Extract new version
     let _ = progress_tx.send(UpdateProgress {
@@ -241,18 +240,18 @@ pub async fn install_update(
     });
 
     let phase_start = Instant::now();
-    restore_user_directories_smart(&previous_version_dir, &game_dir, prevent_save_move).await?;
+    restore_user_directories_smart(&archive_dir, &game_dir, prevent_save_move).await?;
     tracing::info!("Restore complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
     // Phase 4: Cleanup
-    // Always delete old_backup_dir (the stale previous_version from last update)
+    // Always delete old_archive_dir (the stale archive from last update)
     // Delete in background to not block completion
     // Uses remove_dir_all crate which is faster than std::fs::remove_dir_all on Windows
-    let old_backup_for_cleanup = old_backup_dir.clone();
+    let old_archive_for_cleanup = old_archive_dir.clone();
     tokio::spawn(async move {
-        if old_backup_for_cleanup.exists() {
+        if old_archive_for_cleanup.exists() {
             let start = Instant::now();
-            let path = old_backup_for_cleanup.clone();
+            let path = old_archive_for_cleanup.clone();
             let result = tokio::task::spawn_blocking(move || {
                 remove_dir_all::remove_dir_all(&path)
             })
@@ -266,7 +265,7 @@ pub async fn install_update(
                     );
                 }
                 Ok(Err(e)) => {
-                    tracing::warn!("Failed to remove old backup: {}", e);
+                    tracing::warn!("Failed to remove old archive: {}", e);
                 }
                 Err(e) => {
                     tracing::warn!("Cleanup task panicked: {}", e);
@@ -275,10 +274,10 @@ pub async fn install_update(
         }
     });
 
-    // Optional cleanup of current previous_version
+    // Optional cleanup of current archive directory
     if remove_previous_version {
-        if let Err(e) = tokio::fs::remove_dir_all(&previous_version_dir).await {
-            tracing::warn!("Failed to remove previous_version: {}", e);
+        if let Err(e) = tokio::fs::remove_dir_all(&archive_dir).await {
+            tracing::warn!("Failed to remove installation archive: {}", e);
         }
     }
 
@@ -294,43 +293,47 @@ pub async fn install_update(
     Ok(())
 }
 
-/// Move current installation to backup directory.
+/// Move current installation to archive directory for rollback.
+///
+/// This preserves the current game installation in `.phoenix_archive/` so users
+/// can roll back if needed. This is distinct from save backups (compressed archives
+/// of save data managed via the Backups tab, stored in AppData).
 ///
 /// Uses fast rename operations to avoid blocking on deletion:
-/// 1. If old_backup_dir exists, delete it (from a previous failed update)
-/// 2. If backup_dir exists, rename it to old_backup_dir (instant)
-/// 3. Create new backup_dir and move files into it
+/// 1. If old_archive_dir exists, delete it (from a previous failed update)
+/// 2. If archive_dir exists, rename it to old_archive_dir (instant)
+/// 3. Create new archive_dir and move files into it
 ///
-/// The old_backup_dir will be cleaned up in the background after the update completes.
-async fn backup_current_installation(
+/// The old_archive_dir will be cleaned up in the background after the update completes.
+async fn archive_current_installation(
     game_dir: &Path,
-    backup_dir: &Path,
-    old_backup_dir: &Path,
+    archive_dir: &Path,
+    old_archive_dir: &Path,
     prevent_save_move: bool,
 ) -> Result<()> {
-    // If old_backup_dir exists from a previous failed update, remove it first
+    // If old_archive_dir exists from a previous failed update, remove it first
     // This should be rare, so blocking here is acceptable
-    if old_backup_dir.exists() {
-        tokio::fs::remove_dir_all(old_backup_dir)
+    if old_archive_dir.exists() {
+        tokio::fs::remove_dir_all(old_archive_dir)
             .await
-            .context("Failed to remove stale old backup directory")?;
+            .context("Failed to remove stale old archive directory")?;
     }
 
-    // If backup_dir exists, rename it to old_backup_dir (instant operation)
+    // If archive_dir exists, rename it to old_archive_dir (instant operation)
     // This is the key optimization - we defer the expensive deletion
-    if backup_dir.exists() {
-        tokio::fs::rename(backup_dir, old_backup_dir)
+    if archive_dir.exists() {
+        tokio::fs::rename(archive_dir, old_archive_dir)
             .await
-            .context("Failed to rename previous_version to old backup")?;
-        tracing::debug!("Renamed existing previous_version to old backup (deferred deletion)");
+            .context("Failed to rename .phoenix_archive to old archive")?;
+        tracing::debug!("Renamed existing .phoenix_archive to old archive (deferred deletion)");
     }
 
-    // Create fresh backup directory
-    tokio::fs::create_dir_all(backup_dir)
+    // Create fresh archive directory
+    tokio::fs::create_dir_all(archive_dir)
         .await
-        .context("Failed to create previous_version directory")?;
+        .context("Failed to create .phoenix_archive directory")?;
 
-    // Move all files/dirs except backup directories and download files
+    // Move all files/dirs except archive directories and download files
     let mut entries = tokio::fs::read_dir(game_dir)
         .await
         .context("Failed to read game directory")?;
@@ -340,10 +343,10 @@ async fn backup_current_installation(
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        // Skip backup directories and any .part download files
+        // Skip archive directories and any .part download files
         // Also skip save directory if prevent_save_move is enabled (leave saves in place)
-        if name_str == "previous_version"
-            || name_str == "previous_version_old"
+        if name_str == ".phoenix_archive"
+            || name_str == ".phoenix_archive_old"
             || name_str.ends_with(".part")
             || (name_str == "save" && prevent_save_move)
         {
@@ -351,15 +354,15 @@ async fn backup_current_installation(
         }
 
         let src = entry.path();
-        let dst = backup_dir.join(&name);
+        let dst = archive_dir.join(&name);
 
         tokio::fs::rename(&src, &dst)
             .await
-            .with_context(|| format!("Failed to move {:?} to backup", src))?;
+            .with_context(|| format!("Failed to move {:?} to archive", src))?;
         items_moved += 1;
     }
 
-    tracing::debug!("Moved {} items to backup", items_moved);
+    tracing::debug!("Moved {} items to archive", items_moved);
     Ok(())
 }
 
@@ -835,17 +838,17 @@ mod tests {
         )
         .unwrap();
 
-        // Backup the installation (prevent_save_move = false, so saves are backed up)
-        let backup_dir = game_dir.join("previous_version");
-        let old_backup_dir = game_dir.join("previous_version_old");
-        backup_current_installation(&game_dir, &backup_dir, &old_backup_dir, false).await.unwrap();
+        // Archive the installation (prevent_save_move = false, so saves are archived)
+        let archive_dir = game_dir.join(".phoenix_archive");
+        let old_archive_dir = game_dir.join(".phoenix_archive_old");
+        archive_current_installation(&game_dir, &archive_dir, &old_archive_dir, false).await.unwrap();
 
-        // Verify backup contains the files
-        assert!(backup_dir.join("cataclysm-tiles.exe").exists());
-        assert!(backup_dir.join("save").join("test_world.sav").exists());
-        assert!(backup_dir.join("config").join("options.json").exists());
-        assert!(backup_dir.join("config").join("debug.log").exists());
-        assert!(backup_dir.join("data").join("mods").join("my_custom_mod").join("modinfo.json").exists());
+        // Verify archive contains the files
+        assert!(archive_dir.join("cataclysm-tiles.exe").exists());
+        assert!(archive_dir.join("save").join("test_world.sav").exists());
+        assert!(archive_dir.join("config").join("options.json").exists());
+        assert!(archive_dir.join("config").join("debug.log").exists());
+        assert!(archive_dir.join("data").join("mods").join("my_custom_mod").join("modinfo.json").exists());
 
         // Verify original files are moved (not copied)
         assert!(!game_dir.join("cataclysm-tiles.exe").exists());
@@ -862,7 +865,7 @@ mod tests {
         .unwrap();
 
         // Restore user directories with smart migration
-        restore_user_directories_smart(&backup_dir, &game_dir, false).await.unwrap();
+        restore_user_directories_smart(&archive_dir, &game_dir, false).await.unwrap();
 
         // Verify saves are restored
         assert!(game_dir.join("save").join("test_world.sav").exists());
@@ -877,14 +880,14 @@ mod tests {
         // Verify custom mod is restored
         assert!(game_dir.join("data").join("mods").join("my_custom_mod").join("modinfo.json").exists());
 
-        // Verify backup still exists (for rollback)
-        assert!(backup_dir.join("save").join("test_world.sav").exists());
+        // Verify archive still exists (for rollback)
+        assert!(archive_dir.join("save").join("test_world.sav").exists());
     }
 
     #[tokio::test]
     async fn test_restore_with_prevent_save_move() {
         let temp_dir = TempDir::new().unwrap();
-        let previous_dir = temp_dir.path().join("previous_version");
+        let previous_dir = temp_dir.path().join(".phoenix_archive");
         let game_dir = temp_dir.path().join("game");
 
         // Create save in previous version
@@ -903,28 +906,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_backup_renames_old_previous_version() {
+    async fn test_archive_renames_old_archive() {
         let temp_dir = TempDir::new().unwrap();
         let game_dir = temp_dir.path().to_path_buf();
 
-        // Create an old previous_version directory
-        let backup_dir = game_dir.join("previous_version");
-        let old_backup_dir = game_dir.join("previous_version_old");
-        fs::create_dir_all(&backup_dir).unwrap();
-        fs::write(backup_dir.join("old_file.txt"), b"old data").unwrap();
+        // Create an old .phoenix_archive directory
+        let archive_dir = game_dir.join(".phoenix_archive");
+        let old_archive_dir = game_dir.join(".phoenix_archive_old");
+        fs::create_dir_all(&archive_dir).unwrap();
+        fs::write(archive_dir.join("old_file.txt"), b"old data").unwrap();
 
         // Create current game files
         fs::write(game_dir.join("game.exe"), b"game").unwrap();
 
-        // Backup should rename old previous_version to old_backup_dir
-        backup_current_installation(&game_dir, &backup_dir, &old_backup_dir, false).await.unwrap();
+        // Archive should rename old .phoenix_archive to old_archive_dir
+        archive_current_installation(&game_dir, &archive_dir, &old_archive_dir, false).await.unwrap();
 
-        // Old file should be in old_backup_dir (renamed, not deleted)
-        assert!(old_backup_dir.join("old_file.txt").exists());
+        // Old file should be in old_archive_dir (renamed, not deleted)
+        assert!(old_archive_dir.join("old_file.txt").exists());
 
-        // New previous_version should have current game file
-        assert!(backup_dir.join("game.exe").exists());
-        assert!(!backup_dir.join("old_file.txt").exists());
+        // New .phoenix_archive should have current game file
+        assert!(archive_dir.join("game.exe").exists());
+        assert!(!archive_dir.join("old_file.txt").exists());
     }
 
     #[tokio::test]

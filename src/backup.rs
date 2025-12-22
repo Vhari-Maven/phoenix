@@ -17,6 +17,7 @@ use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+use crate::config::Config;
 use crate::util::format_size;
 
 /// Files that indicate a world directory
@@ -161,14 +162,19 @@ impl BackupProgress {
     }
 }
 
-/// Get the backup directory for a game installation
-pub fn backup_dir(game_dir: &Path) -> PathBuf {
+/// Get the backup directory (in AppData)
+pub fn backup_dir() -> PathBuf {
+    Config::backups_dir().expect("Failed to get backups directory")
+}
+
+/// Get the old backup directory path (for migration)
+pub fn legacy_backup_dir(game_dir: &Path) -> PathBuf {
     game_dir.join("save_backups")
 }
 
 /// List all backups in the backup directory
-pub async fn list_backups(game_dir: &Path) -> Result<Vec<BackupInfo>, BackupError> {
-    let backup_path = backup_dir(game_dir);
+pub async fn list_backups() -> Result<Vec<BackupInfo>, BackupError> {
+    let backup_path = backup_dir();
 
     if !backup_path.exists() {
         return Ok(Vec::new());
@@ -202,6 +208,8 @@ pub async fn list_backups(game_dir: &Path) -> Result<Vec<BackupInfo>, BackupErro
 
 /// Read metadata from a backup file
 fn read_backup_info(path: &Path) -> Option<BackupInfo> {
+    use std::collections::HashSet;
+
     let file = File::open(path).ok()?;
     let metadata = file.metadata().ok()?;
     let modified: DateTime<Local> = metadata.modified().ok()?.into();
@@ -209,7 +217,7 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
 
     let mut archive = ZipArchive::new(file).ok()?;
     let mut uncompressed_size = 0u64;
-    let mut worlds_count = 0u32;
+    let mut worlds: HashSet<String> = HashSet::new();
     let mut characters_count = 0u32;
 
     // Scan archive for metadata
@@ -218,24 +226,29 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
             uncompressed_size += file.size();
 
             let name = file.name();
+            let parts: Vec<&str> = name.split('/').collect();
 
-            // Count worlds: directories containing world marker files
-            for world_file in WORLD_FILES {
-                if name.ends_with(world_file) {
-                    worlds_count += 1;
-                    break;
+            // Count worlds: unique directories containing world marker files
+            // Path format: save/WorldName/marker_file
+            if parts.len() == 3 {
+                let filename = parts[2];
+                if WORLD_FILES.contains(&filename) {
+                    worlds.insert(parts[1].to_string());
                 }
             }
 
-            // Count characters: .sav files at depth 3 (save/world/character.sav)
-            if name.ends_with(".sav") {
-                let depth = name.matches('/').count();
-                if depth == 2 {
+            // Count characters: .sav or .sav.zzip files at depth 2 (save/world/character.sav)
+            // CDDA uses .sav.zzip for compressed saves in newer versions
+            if parts.len() == 3 {
+                let filename = parts[2];
+                if filename.ends_with(".sav") || filename.ends_with(".sav.zzip") {
                     characters_count += 1;
                 }
             }
         }
     }
+
+    let worlds_count = worlds.len() as u32;
 
     let name = path
         .file_stem()
@@ -300,7 +313,7 @@ pub async fn create_backup(
     }
 
     // Ensure backup directory exists
-    let backup_path = backup_dir(game_dir);
+    let backup_path = backup_dir();
     fs::create_dir_all(&backup_path)?;
 
     // Generate backup file path
@@ -332,7 +345,7 @@ fn create_backup_sync(
     progress_tx: watch::Sender<BackupProgress>,
 ) -> Result<BackupInfo, BackupError> {
     let save_dir = game_dir.join("save");
-    let backup_path = backup_dir(game_dir);
+    let backup_path = backup_dir();
     let backup_file = backup_path.join(format!("{}.zip", name));
 
     // Phase 1: Scan files
@@ -418,8 +431,8 @@ fn create_backup_sync(
 }
 
 /// Delete a backup
-pub async fn delete_backup(game_dir: &Path, backup_name: &str) -> Result<(), BackupError> {
-    let backup_path = backup_dir(game_dir);
+pub async fn delete_backup(backup_name: &str) -> Result<(), BackupError> {
+    let backup_path = backup_dir();
     let backup_file = backup_path.join(format!("{}.zip", backup_name));
 
     if !backup_file.exists() {
@@ -440,7 +453,7 @@ pub async fn restore_backup(
     compression_level: u8,
     progress_tx: watch::Sender<BackupProgress>,
 ) -> Result<(), BackupError> {
-    let backup_path = backup_dir(game_dir);
+    let backup_path = backup_dir();
     let backup_file = backup_path.join(format!("{}.zip", backup_name));
 
     if !backup_file.exists() {
@@ -588,7 +601,7 @@ pub async fn create_auto_backup(
     }
 
     // Generate unique name
-    let backup_path = backup_dir(game_dir);
+    let backup_path = backup_dir();
     fs::create_dir_all(&backup_path)?;
 
     let base_name = if let Some(tag) = version_tag {
@@ -605,7 +618,7 @@ pub async fn create_auto_backup(
     let info = create_backup(game_dir, &name, compression_level, progress_tx).await?;
 
     // Enforce retention
-    enforce_retention(game_dir, max_count).await?;
+    enforce_retention(max_count).await?;
 
     Ok(Some(info))
 }
@@ -624,12 +637,12 @@ fn generate_unique_name(backup_path: &Path, base_name: &str) -> String {
 }
 
 /// Enforce backup retention policy (delete oldest auto-backups)
-pub async fn enforce_retention(game_dir: &Path, max_count: u32) -> Result<usize, BackupError> {
+pub async fn enforce_retention(max_count: u32) -> Result<usize, BackupError> {
     if max_count == 0 {
         return Ok(0);
     }
 
-    let mut backups = list_backups(game_dir).await?;
+    let mut backups = list_backups().await?;
 
     // Only consider auto-backups for retention
     backups.retain(|b| b.is_auto);

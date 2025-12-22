@@ -11,7 +11,7 @@ A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 - **HTTP:** reqwest
 - **Serialization:** serde, serde_json, toml
 - **Database:** rusqlite (SQLite)
-- **Archives:** zip, sevenz-rust, unrar crates (ZIP, 7z, RAR)
+- **Archives:** zip crate (ZIP only)
 - **Images:** image crate (icon loading)
 - **File ops:** remove_dir_all crate (fast directory deletion)
 - **Browser:** open crate (open URLs in default browser)
@@ -72,11 +72,12 @@ src/
 ├── task.rs              # Generic task polling helper
 ├── util.rs              # Shared utilities (format_size)
 ├── backup.rs            # Backup service (create, restore, delete)
-├── config.rs            # Configuration (TOML)
+├── config.rs            # Configuration (TOML) and data directories
 ├── db.rs                # SQLite cache for version hashes
 ├── game.rs              # Game detection and launching
 ├── github.rs            # GitHub API client
-├── migration.rs         # Smart migration for updates
+├── legacy.rs            # One-time migration of old data locations
+├── migration.rs         # Smart migration for updates (mods, tilesets, etc.)
 ├── soundpack.rs         # Soundpack service
 └── update.rs            # Update download and installation
 ```
@@ -117,8 +118,13 @@ phoenix/
 
 ## Data Storage
 
+**AppData locations:**
 - **Config:** `%APPDATA%\phoenix\Phoenix\config\config.toml`
 - **Database:** `%APPDATA%\phoenix\Phoenix\data\phoenix.db` (SQLite, version cache)
+- **Backups:** `%APPDATA%\phoenix\Phoenix\data\backups\` (compressed save archives)
+
+**Game folder:**
+- **Installation archive:** `.phoenix_archive/` (previous version for rollback after updates)
 
 ```toml
 [launcher]

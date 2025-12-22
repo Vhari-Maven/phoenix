@@ -46,7 +46,7 @@ impl PhoenixApp {
         // Load configuration
         let phase_start = Instant::now();
         let config = Config::load().unwrap_or_default();
-        tracing::debug!(
+        tracing::info!(
             "Config loaded in {:.1}ms",
             phase_start.elapsed().as_secs_f32() * 1000.0
         );
@@ -60,7 +60,7 @@ impl PhoenixApp {
                 None
             }
         };
-        tracing::debug!(
+        tracing::info!(
             "Database opened in {:.1}ms",
             phase_start.elapsed().as_secs_f32() * 1000.0
         );
@@ -73,7 +73,7 @@ impl PhoenixApp {
                 .flatten()
         });
         if config.game.directory.is_some() {
-            tracing::debug!(
+            tracing::info!(
                 "Game detection in {:.1}ms",
                 phase_start.elapsed().as_secs_f32() * 1000.0
             );
@@ -105,6 +105,11 @@ impl PhoenixApp {
             backup: BackupState::default(),
             soundpack: SoundpackState::default(),
         };
+
+        // Migrate legacy data (save_backups folder, previous_version folder)
+        if let Some(ref game_dir) = app.config.game.directory {
+            crate::legacy::migrate(std::path::Path::new(game_dir));
+        }
 
         // Auto-fetch releases for current branch on startup
         if let Some(event) = app.releases.fetch_for_branch(&branch, &app.github_client) {
@@ -327,13 +332,13 @@ impl PhoenixApp {
     }
 
     /// Refresh the backup list
-    pub(crate) fn refresh_backup_list(&mut self, game_dir: &std::path::Path) {
-        self.backup.refresh_list(game_dir);
+    pub(crate) fn refresh_backup_list(&mut self) {
+        self.backup.refresh_list();
     }
 
     /// Delete the selected backup
-    pub(crate) fn delete_selected_backup(&mut self, game_dir: &std::path::Path) {
-        if let Some(event) = self.backup.delete_selected(game_dir) {
+    pub(crate) fn delete_selected_backup(&mut self) {
+        if let Some(event) = self.backup.delete_selected() {
             self.handle_event(event);
         }
     }
@@ -398,7 +403,7 @@ impl eframe::App for PhoenixApp {
         let update_events = self.update.poll(ctx);
         self.handle_events(update_events);
 
-        let backup_events = self.backup.poll(ctx, game_dir_ref);
+        let backup_events = self.backup.poll(ctx);
         self.handle_events(backup_events);
 
         let soundpack_events = self.soundpack.poll(ctx, game_dir_ref);
@@ -408,9 +413,9 @@ impl eframe::App for PhoenixApp {
 
         // Top menu bar
         egui::TopBottomPanel::top("menu_bar")
-            .frame(egui::Frame::none().fill(theme.bg_darkest).inner_margin(4.0))
+            .frame(egui::Frame::new().fill(theme.bg_darkest).inner_margin(4.0))
             .show(ctx, |ui| {
-                egui::menu::bar(ui, |ui| {
+                egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button("File", |ui| {
                         if ui.button("Exit").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -419,7 +424,7 @@ impl eframe::App for PhoenixApp {
                     ui.menu_button("Help", |ui| {
                         if ui.button("About").clicked() {
                             self.ui.show_about_dialog = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                     });
                 });
@@ -427,7 +432,7 @@ impl eframe::App for PhoenixApp {
 
         // Status bar at bottom
         egui::TopBottomPanel::bottom("status_bar")
-            .frame(egui::Frame::none().fill(theme.bg_darkest).inner_margin(8.0))
+            .frame(egui::Frame::new().fill(theme.bg_darkest).inner_margin(8.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(&self.status_message).color(theme.text_muted));
@@ -436,7 +441,7 @@ impl eframe::App for PhoenixApp {
 
         // Main content area
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(theme.bg_dark).inner_margin(16.0))
+            .frame(egui::Frame::new().fill(theme.bg_dark).inner_margin(16.0))
             .show(ctx, |ui| {
                 // Tab bar
                 ui.horizontal(|ui| {

@@ -59,6 +59,7 @@ pub enum SoundpackPhase {
     Downloading,
     Extracting,
     Installing,
+    Deleting,
     Complete,
     Failed,
 }
@@ -71,8 +72,9 @@ impl SoundpackPhase {
             SoundpackPhase::Downloading => "Downloading soundpack...",
             SoundpackPhase::Extracting => "Extracting archive...",
             SoundpackPhase::Installing => "Installing soundpack...",
-            SoundpackPhase::Complete => "Installation complete!",
-            SoundpackPhase::Failed => "Installation failed",
+            SoundpackPhase::Deleting => "Deleting soundpack...",
+            SoundpackPhase::Complete => "Operation complete!",
+            SoundpackPhase::Failed => "Operation failed",
         }
     }
 }
@@ -114,8 +116,6 @@ impl SoundpackProgress {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
     Zip,
-    Rar,
-    SevenZ,
 }
 
 /// Errors that can occur during soundpack operations
@@ -323,13 +323,11 @@ pub async fn delete_soundpack(soundpack_path: PathBuf) -> Result<(), SoundpackEr
 // Archive Extraction
 // ============================================================================
 
-/// Detect archive format from file extension
+/// Detect archive format from file extension (only ZIP is supported)
 pub fn detect_archive_format(path: &Path) -> Option<ArchiveFormat> {
     let extension = path.extension()?.to_str()?.to_lowercase();
     match extension.as_str() {
         "zip" => Some(ArchiveFormat::Zip),
-        "rar" => Some(ArchiveFormat::Rar),
-        "7z" => Some(ArchiveFormat::SevenZ),
         _ => None,
     }
 }
@@ -356,8 +354,6 @@ pub async fn extract_archive(
 
     tokio::task::spawn_blocking(move || match format {
         ArchiveFormat::Zip => extract_zip_archive(&archive_path, &dest_dir, &progress_tx),
-        ArchiveFormat::Rar => extract_rar_archive(&archive_path, &dest_dir, &progress_tx),
-        ArchiveFormat::SevenZ => extract_7z_archive(&archive_path, &dest_dir, &progress_tx),
     })
     .await
     .map_err(|_| SoundpackError::Cancelled)?
@@ -407,66 +403,6 @@ fn extract_zip_archive(
         }
     }
 
-    Ok(())
-}
-
-/// Extract RAR archive using unrar crate
-fn extract_rar_archive(
-    archive_path: &Path,
-    dest_dir: &Path,
-    progress_tx: &watch::Sender<SoundpackProgress>,
-) -> Result<(), SoundpackError> {
-    use unrar::Archive;
-
-    let archive = Archive::new(archive_path)
-        .open_for_processing()
-        .map_err(|e| SoundpackError::ExtractionFailed(format!("Failed to open RAR: {}", e)))?;
-
-    let mut extracted = 0;
-
-    let mut archive = archive;
-    while let Some(header) = archive
-        .read_header()
-        .map_err(|e| SoundpackError::ExtractionFailed(format!("RAR header error: {}", e)))?
-    {
-        let entry_name = header.entry().filename.to_string_lossy().to_string();
-
-        archive = header
-            .extract_to(dest_dir)
-            .map_err(|e| SoundpackError::ExtractionFailed(format!("RAR extract error: {}", e)))?;
-
-        extracted += 1;
-
-        if extracted % 50 == 0 {
-            let _ = progress_tx.send(SoundpackProgress {
-                phase: SoundpackPhase::Extracting,
-                files_extracted: extracted,
-                current_file: entry_name,
-                ..Default::default()
-            });
-        }
-    }
-
-    tracing::info!("Extracted {} files from RAR archive", extracted);
-    Ok(())
-}
-
-/// Extract 7z archive using sevenz-rust crate
-fn extract_7z_archive(
-    archive_path: &Path,
-    dest_dir: &Path,
-    progress_tx: &watch::Sender<SoundpackProgress>,
-) -> Result<(), SoundpackError> {
-    let _ = progress_tx.send(SoundpackProgress {
-        phase: SoundpackPhase::Extracting,
-        current_file: "Decompressing 7z archive...".to_string(),
-        ..Default::default()
-    });
-
-    sevenz_rust::decompress_file(archive_path, dest_dir)
-        .map_err(|e| SoundpackError::ExtractionFailed(format!("7z extraction failed: {}", e)))?;
-
-    tracing::info!("Extracted 7z archive to {:?}", dest_dir);
     Ok(())
 }
 
@@ -775,14 +711,9 @@ mod tests {
             detect_archive_format(Path::new("test.zip")),
             Some(ArchiveFormat::Zip)
         );
-        assert_eq!(
-            detect_archive_format(Path::new("test.rar")),
-            Some(ArchiveFormat::Rar)
-        );
-        assert_eq!(
-            detect_archive_format(Path::new("test.7z")),
-            Some(ArchiveFormat::SevenZ)
-        );
+        // Only ZIP is supported
+        assert_eq!(detect_archive_format(Path::new("test.rar")), None);
+        assert_eq!(detect_archive_format(Path::new("test.7z")), None);
         assert_eq!(detect_archive_format(Path::new("test.tar.gz")), None);
         assert_eq!(detect_archive_format(Path::new("no_extension")), None);
     }
@@ -819,10 +750,14 @@ mod tests {
             "Installing soundpack..."
         );
         assert_eq!(
-            SoundpackPhase::Complete.description(),
-            "Installation complete!"
+            SoundpackPhase::Deleting.description(),
+            "Deleting soundpack..."
         );
-        assert_eq!(SoundpackPhase::Failed.description(), "Installation failed");
+        assert_eq!(
+            SoundpackPhase::Complete.description(),
+            "Operation complete!"
+        );
+        assert_eq!(SoundpackPhase::Failed.description(), "Operation failed");
     }
 
     #[test]

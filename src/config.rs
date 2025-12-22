@@ -176,6 +176,26 @@ impl Config {
         Ok(config_dir.join("config.toml"))
     }
 
+    /// Get the Phoenix data directory (for database, etc.)
+    pub fn data_dir() -> Result<PathBuf> {
+        let dirs = directories::ProjectDirs::from("com", "phoenix", "Phoenix")
+            .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
+
+        let data_dir = dirs.data_dir();
+        std::fs::create_dir_all(data_dir)?;
+
+        Ok(data_dir.to_path_buf())
+    }
+
+    /// Get the backups directory (in AppData)
+    pub fn backups_dir() -> Result<PathBuf> {
+        let data_dir = Self::data_dir()?;
+        let backups_dir = data_dir.join("backups");
+        std::fs::create_dir_all(&backups_dir)?;
+
+        Ok(backups_dir)
+    }
+
     /// Load configuration from file
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;

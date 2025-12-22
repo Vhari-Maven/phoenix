@@ -7,6 +7,7 @@ mod config;
 mod db;
 mod game;
 mod github;
+mod legacy;
 mod migration;
 mod soundpack;
 mod state;
