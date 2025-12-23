@@ -1,3 +1,17 @@
+//! Main application module containing PhoenixApp.
+//!
+//! This module is the central coordinator for Phoenix. It:
+//!
+//! - Owns all application state (config, database, game info, grouped state structs)
+//! - Implements the eframe::App trait for the main update loop
+//! - Polls all state structs each frame and handles their events
+//! - Delegates UI interactions to the appropriate state structs
+//! - Renders the UI by dispatching to tab-specific rendering functions
+//!
+//! The architecture follows a poll-based event pattern where state structs
+//! return `Vec<StateEvent>` from their poll methods, and PhoenixApp handles
+//! these events centrally (updating status messages, logging, refreshing game info).
+
 use std::path::PathBuf;
 use std::time::Instant;
 

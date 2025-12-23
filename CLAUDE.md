@@ -53,7 +53,7 @@ Tags containing `alpha`, `beta`, or `rc` are marked as prereleases.
 ```
 src/
 ├── main.rs              # Entry point, logging, icon loading
-├── app.rs               # PhoenixApp coordination (~474 lines)
+├── app.rs               # PhoenixApp coordination
 ├── state/               # Grouped state structs with poll methods
 │   ├── mod.rs           # StateEvent enum + module exports
 │   ├── ui.rs            # UiState, Tab enum
@@ -100,6 +100,7 @@ phoenix/
 │   ├── icon.png         # Embedded window icon
 │   └── soundpacks.json  # Embedded soundpack repository
 ├── docs/
+│   ├── ARCHITECTURE.md  # In-depth architecture guide for developers
 │   └── TODO.md          # Bug tracking and feature ideas
 ├── reference/           # Original Python source (gitignored)
 ├── src/                 # Source code (see Architecture above)

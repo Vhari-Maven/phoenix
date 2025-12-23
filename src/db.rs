@@ -1,3 +1,15 @@
+//! SQLite database for caching version information.
+//!
+//! This module provides a persistent cache that maps executable SHA256 hashes
+//! to version information. This avoids re-parsing VERSION.txt for previously
+//! seen game builds.
+//!
+//! The database is stored at `%APPDATA%\phoenix\Phoenix\data\phoenix.db`.
+//!
+//! Additionally, this module contains a hardcoded lookup table for known
+//! stable release hashes (0.C through 0.G), enabling instant version
+//! identification without any disk I/O.
+
 use anyhow::Result;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;

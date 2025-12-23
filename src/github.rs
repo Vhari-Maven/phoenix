@@ -1,3 +1,19 @@
+//! GitHub API client for fetching CDDA releases.
+//!
+//! This module provides:
+//!
+//! - `GitHubClient`: HTTP client wrapper with rate limit tracking
+//! - `Release` and `ReleaseAsset`: Deserialized GitHub API responses
+//! - Functions to fetch experimental and stable releases
+//!
+//! The client supports two release branches:
+//!
+//! - **Experimental**: Fetched from the GitHub releases API, filtered to Windows x64 builds
+//! - **Stable**: Uses tag-based candidate generation (0.G, 0.H, etc.) to find stable releases
+//!   efficiently without pagination
+//!
+//! Rate limiting is tracked and exposed via `RateLimitInfo` for UI display.
+
 use anyhow::Result;
 use serde::Deserialize;
 
@@ -159,8 +175,18 @@ impl GitHubClient {
         candidates
     }
 
-    /// Fetch stable releases by trying known tag patterns directly
-    /// This avoids fetching all tags (which is slow due to thousands of experimental tags)
+    /// Fetch stable releases by trying known tag patterns directly.
+    ///
+    /// CDDA stable releases follow a predictable naming pattern: `0.C`, `0.D`, ..., `0.G`,
+    /// with optional point releases like `0.F-1`, `0.F-2`, etc.
+    ///
+    /// Instead of fetching all 1000+ tags and filtering, this function:
+    /// 1. Generates candidate tag names (`0.C` through `0.Z`, plus `-1` through `-10` variants)
+    /// 2. Fetches all candidates in parallel (most will 404)
+    /// 3. Keeps only the latest release per version letter (e.g., `0.F-3` over `0.F-2`)
+    /// 4. Returns releases sorted by version letter descending (newest first)
+    ///
+    /// This approach is ~10x faster than pagination and uses fewer API requests.
     pub async fn get_stable_releases(&self) -> Result<FetchResult<Vec<Release>>> {
         let start = std::time::Instant::now();
 
@@ -243,8 +269,16 @@ impl GitHubClient {
         Ok(FetchResult { data: releases, rate_limit })
     }
 
-    /// Find the Windows x64 graphical asset in a release
-    /// Prefers the version with sounds if available
+    /// Find the Windows x64 graphical asset in a release.
+    ///
+    /// Searches release assets for a Windows build matching these criteria:
+    /// - Contains "windows" in the filename
+    /// - Contains "tiles" or "graphics" (graphical build, not console)
+    /// - Contains "x64" (64-bit build)
+    /// - Ends with ".zip"
+    ///
+    /// If multiple matches exist, prefers the version with sounds included.
+    /// Returns `None` if no suitable asset is found.
     pub fn find_windows_asset(release: &Release) -> Option<&ReleaseAsset> {
         let mut best_match: Option<&ReleaseAsset> = None;
 

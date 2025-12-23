@@ -15,17 +15,28 @@ The original Python/Qt launcher is feature-rich but can take 10-15 seconds to st
 ## Features
 
 - **Game Launching** - Browse for game directory, launch with one click
-- **Version Detection** - SHA256-based build identification with SQLite caching
+- **Version Detection** - Automatically identifies your installed game version
 - **Automatic Updates** - Download and install updates with progress tracking
 - **Smart Migration** - Preserves your mods, saves, tilesets, soundpacks, and fonts during updates
 - **Save Backups** - Manual and automatic backup management with compression
-- **Soundpack Manager** - Install, enable/disable, and delete soundpacks (ZIP, RAR, 7z)
+- **Soundpack Manager** - Install, enable/disable, and delete soundpacks (ZIP)
 - **Theme System** - 5 built-in color themes (Amber, Purple, Cyan, Green, Catppuccin)
 - **Fast Updates** - Optimized update process (~18 seconds vs ~54 seconds naive approach)
 
 ## Download
 
 See the [Releases](https://github.com/Vhari-Maven/phoenix/releases) page for the latest build.
+
+## Getting Started
+
+1. **Download and run** `phoenix.exe` - no installation required
+2. **Set your game directory:**
+   - Click "Browse" and select your existing CDDA folder, or
+   - Choose an empty folder where you'd like to install the game
+3. **Install or update** (if needed) - choose a branch (Stable/Experimental), select a release, and click "Install Game" or "Update Game"
+4. **Launch** - click the Launch button to play
+
+Phoenix will remember your settings between sessions.
 
 ## FAQ
 
@@ -103,6 +114,14 @@ The original launcher's thoughtful update process, smart migration logic, and us
 ### Built with AI
 
 The majority of this codebase was written by [Claude](https://claude.ai) (Opus 4.5) via [Claude Code](https://claude.ai/claude-code), Anthropic's AI coding assistant. This project serves as an example of human-AI collaboration in software development.
+
+## For Developers
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for an in-depth guide to the codebase, including:
+- Rust concepts for non-Rust developers
+- State management and async patterns
+- UI rendering architecture
+- Complete data flow examples
 
 ## License
 

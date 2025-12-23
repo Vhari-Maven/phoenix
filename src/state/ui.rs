@@ -4,13 +4,17 @@ use egui_commonmark::CommonMarkCache;
 
 use crate::ui::theme::Theme;
 
-/// Application tabs
+/// Application tabs representing the main navigation sections.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
+    /// Main tab: game info, version display, update controls, launch button
     #[default]
     Main,
+    /// Backups tab: create, restore, and manage save backups
     Backups,
+    /// Soundpacks tab: install soundpacks from repository or local files
     Soundpacks,
+    /// Settings tab: theme selection, update preferences, backup options
     Settings,
 }
 

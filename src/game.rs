@@ -1,3 +1,18 @@
+//! Game detection and launching.
+//!
+//! This module handles:
+//!
+//! - Detecting CDDA installations by finding game executables
+//! - Identifying game versions through multiple strategies:
+//!   1. SHA256 hash lookup (instant for known stable versions)
+//!   2. Database cache lookup (fast for previously seen builds)
+//!   3. VERSION.txt parsing (fallback for experimental builds)
+//! - Launching the game with optional command-line parameters
+//! - Calculating save directory sizes
+//!
+//! The version detection uses a 3-tier optimization to minimize disk I/O
+//! and provide instant identification for stable releases.
+
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};

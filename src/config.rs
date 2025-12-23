@@ -1,3 +1,15 @@
+//! Application configuration management.
+//!
+//! This module handles loading and saving Phoenix settings from a TOML file
+//! located at `%APPDATA%\phoenix\Phoenix\config\config.toml`.
+//!
+//! Configuration is organized into sections:
+//!
+//! - `LauncherConfig`: Theme, window behavior
+//! - `GameConfig`: Game directory, branch (experimental/stable), command line params
+//! - `UpdateConfig`: Auto-check, save handling, archive cleanup
+//! - `BackupConfig`: Compression level, max count, auto-backup triggers
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
