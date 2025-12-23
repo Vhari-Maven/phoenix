@@ -48,6 +48,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+rustyline = "15"
 
 # Utilities
 walkdir = "2"

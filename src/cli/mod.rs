@@ -4,6 +4,7 @@
 
 mod commands;
 mod output;
+mod shell;
 
 use clap::{Parser, Subcommand};
 
@@ -85,6 +86,9 @@ pub enum Commands {
         #[command(subcommand)]
         command: commands::diag::DiagCommands,
     },
+
+    /// Interactive shell mode
+    Shell,
 }
 
 /// Run the CLI with parsed arguments
@@ -99,5 +103,6 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Soundpack { command } => commands::soundpack::run(command, format, quiet).await,
         Commands::Config { command } => commands::config::run(command, format, quiet).await,
         Commands::Diag { command } => commands::diag::run(command, format, quiet).await,
+        Commands::Shell => shell::run().await,
     }
 }

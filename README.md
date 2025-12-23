@@ -73,6 +73,9 @@ phoenix config set <key> <value> # Set a configuration value
 # Diagnostics
 phoenix diag paths               # Show all data paths
 phoenix diag check               # Verify installation health
+
+# Interactive shell
+phoenix shell                    # Start REPL with history and tab completion
 ```
 
 **Global options:**

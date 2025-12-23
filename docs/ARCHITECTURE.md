@@ -748,6 +748,7 @@ When finished:
 |------|---------|
 | `src/cli/mod.rs` | CLI argument definitions (clap), entry point |
 | `src/cli/output.rs` | Output formatting (text/JSON), shared utilities |
+| `src/cli/shell.rs` | Interactive REPL with history and tab completion (rustyline) |
 | `src/cli/commands/game.rs` | `game detect\|launch\|info` commands |
 | `src/cli/commands/backup.rs` | `backup list\|create\|restore\|delete\|verify` commands |
 | `src/cli/commands/update.rs` | `update check\|releases\|download\|install\|apply` commands |

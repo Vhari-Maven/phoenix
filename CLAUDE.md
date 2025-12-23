@@ -16,7 +16,7 @@ A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 - **File ops:** remove_dir_all crate (fast directory deletion)
 - **Browser:** open crate (open URLs in default browser)
 - **Windows APIs:** windows crate
-- **CLI:** clap (derive macros)
+- **CLI:** clap (derive macros), rustyline (interactive shell)
 
 ## Build & Run
 
@@ -35,9 +35,12 @@ cargo run -- game detect             # Detect game version
 cargo run -- config show             # Show current configuration
 cargo run -- backup list --json      # List backups as JSON
 cargo run -- update check            # Check for updates
+cargo run -- shell                   # Interactive shell with history/completion
 ```
 
 Use `--json` for machine-readable output, `--quiet` to suppress progress.
+
+The interactive shell (`cargo run -- shell`) provides tab completion, command history, and a REPL for running multiple commands without restarting.
 
 ## Releases
 
