@@ -117,7 +117,7 @@ impl GitHubClient {
 
     /// Fetch a release by tag name (returns None if tag doesn't exist)
     /// Also returns rate limit info from the response
-    async fn get_release_by_tag(&self, tag: &str) -> (Option<Release>, RateLimitInfo) {
+    pub async fn get_release_by_tag(&self, tag: &str) -> (Option<Release>, RateLimitInfo) {
         let github = &launcher_config().github;
         let url = format!(
             "{}/repos/{}/releases/tags/{}",

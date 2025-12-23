@@ -10,19 +10,24 @@ check_letters = ["I", "J"]
 tag = "0.H-RELEASE"
 name = "Herbert"
 published = "2024-11-23"
-asset_name = "cdda-windows-tiles-x64-sounds-2024-11-23-0456.zip"
-asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.H-RELEASE/cdda-windows-tiles-x64-sounds-2024-11-23-0456.zip"
-asset_size = 296484864
-hashes = []  # TODO: Add hashes when available
+asset_name = "cdda-windows-with-graphics-and-sounds-x64-2024-11-23-1857.zip"
+asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.H-RELEASE/cdda-windows-with-graphics-and-sounds-x64-2024-11-23-1857.zip"
+asset_size = 296446704
+hashes = [
+    "d8707cc1a657287f9c3071c3444c1eff18cceddcf3f3176f97cd4448a207414e",  # with-graphics-and-sounds
+    "26d550598827e60025946dd9bc1042a1b1bec086a96ba5a26e9bbc12f3932dfc",  # with-graphics (no sounds)
+]
 
 [[releases]]
 tag = "0.G"
 name = "Gaiman"
 published = "2023-03-01"
-asset_name = "cdda-windows-tiles-sounds-x64-2023-03-01-0349.zip"
-asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.G/cdda-windows-tiles-sounds-x64-2023-03-01-0349.zip"
-asset_size = 298049536
-hashes = []  # TODO: Add hashes when available
+asset_name = "cdda-windows-tiles-sounds-x64-2023-03-01-0054.zip"
+asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.G/cdda-windows-tiles-sounds-x64-2023-03-01-0054.zip"
+asset_size = 298115201
+hashes = [
+    "0b980ed6420c3b5a4206b3c1397f30a3a22d6c1ac54d2146ccdea29ba85ee9d0",  # tiles-sounds
+]
 
 [[releases]]
 tag = "0.F-3"

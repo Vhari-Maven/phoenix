@@ -69,29 +69,15 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
         return Ok(None);
     };
 
-    // Fast path: Try VERSION.txt first (experimental builds always have this)
-    if let Some(version_info) = read_version_txt(directory, config) {
-        // Calculate saves size
-        let saves_dir = directory.join(&config.directories.save);
-        let saves_size = if saves_dir.exists() {
-            calculate_dir_size(&saves_dir).unwrap_or(0)
-        } else {
-            0
-        };
+    // Try VERSION.txt first (experimental builds always have this)
+    let version_txt_info = read_version_txt(directory, config);
 
-        return Ok(Some(GameInfo {
-            executable,
-            version_info: Some(version_info),
-            saves_size,
-        }));
-    }
-
-    // Slow path: No VERSION.txt, need SHA256 for stable version lookup
-    // Use cached hash if available to avoid expensive recalculation
+    // Check hash to identify stable releases (even if VERSION.txt exists)
+    // Use cached hash when possible to avoid expensive recalculation
     let sha256 = get_or_calculate_sha256(&executable, db)?;
 
-    // Look up version from database (for stable releases)
-    let version_info = if let Some(db) = db {
+    // Look up version from database/embedded config (for stable releases)
+    let stable_version_info = if let Some(db) = db {
         match db.get_version(sha256.as_str()) {
             Ok(info) => info,
             Err(e) => {
@@ -102,6 +88,10 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
     } else {
         None
     };
+
+    // Prefer stable version info if hash matches a known stable release,
+    // otherwise fall back to VERSION.txt info
+    let version_info = stable_version_info.or(version_txt_info);
 
     // Calculate saves size
     let saves_dir = directory.join(&config.directories.save);

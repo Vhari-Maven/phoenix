@@ -153,6 +153,16 @@ impl PhoenixApp {
             StateEvent::LogInfo(msg) => {
                 tracing::info!("{}", msg);
             }
+            StateEvent::ChangelogFetched { tag, body } => {
+                // Cache the changelog in the database
+                if let Some(ref db) = self.db {
+                    if let Err(e) = db.store_changelog(&tag, &body) {
+                        tracing::warn!("Failed to cache changelog for {}: {}", tag, e);
+                    } else {
+                        tracing::debug!("Cached changelog for {}", tag);
+                    }
+                }
+            }
         }
     }
 
@@ -184,6 +194,43 @@ impl PhoenixApp {
         if let Some(event) = self.releases.fetch_for_branch(branch, &self.github_client) {
             self.handle_event(event);
         }
+    }
+
+    /// Ensure changelog is available for the selected stable release.
+    /// Checks DB cache first, then fetches from GitHub API if needed.
+    pub(crate) fn ensure_changelog_for_selection(&mut self) {
+        // Only applies to stable branch
+        if self.config.game.branch != "stable" {
+            return;
+        }
+
+        // Get the selected release
+        let Some(idx) = self.releases.selected_idx else {
+            return;
+        };
+        let Some(release) = self.releases.stable.get(idx) else {
+            return;
+        };
+
+        // If it already has a body, we're done
+        if release.body.is_some() {
+            return;
+        }
+
+        let tag = release.tag_name.clone();
+
+        // Check DB cache first
+        if let Some(ref db) = self.db {
+            if let Ok(Some(body)) = db.get_changelog(&tag) {
+                tracing::debug!("Loaded changelog for {} from cache", tag);
+                self.releases.set_stable_release_body(&tag, body);
+                return;
+            }
+        }
+
+        // Not in cache, fetch from GitHub API
+        tracing::debug!("Fetching changelog for {} from GitHub", tag);
+        self.releases.fetch_changelog(&tag, &self.github_client);
     }
 
     /// Start the update process for the selected release
@@ -413,6 +460,9 @@ impl eframe::App for PhoenixApp {
 
         let release_events = self.releases.poll(ctx, &self.config.game.branch);
         self.handle_events(release_events);
+
+        let changelog_events = self.releases.poll_changelog(ctx);
+        self.handle_events(changelog_events);
 
         let update_events = self.update.poll(ctx);
         self.handle_events(update_events);

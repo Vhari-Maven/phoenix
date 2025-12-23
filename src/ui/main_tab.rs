@@ -13,6 +13,9 @@ use crate::util::format_size;
 pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
     let theme = app.ui.current_theme.clone();
 
+    // Ensure changelog is available for stable releases (checks DB cache, then fetches if needed)
+    app.ensure_changelog_for_selection();
+
     // Game section
     render_section_frame(app, ui, "Game", |app, ui| {
         // Directory row
@@ -135,6 +138,8 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                     .clicked()
                                 {
                                     app.releases.selected_idx = Some(*i);
+                                    // Ensure changelog is available for stable releases
+                                    app.ensure_changelog_for_selection();
                                 }
                             }
                         });
@@ -159,6 +164,8 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                 app.fetch_releases_for_branch(&branch);
             } else {
                 app.releases.selected_idx = Some(0);
+                // Ensure changelog is available for stable releases
+                app.ensure_changelog_for_selection();
             }
         }
 
@@ -258,6 +265,11 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                     let processed = convert_urls_to_links(text);
                                     CommonMarkViewer::new()
                                         .show(ui, &mut app.ui.markdown_cache, &processed);
+                                } else if app.releases.changelog_loading {
+                                    ui.horizontal(|ui| {
+                                        ui.spinner();
+                                        ui.label(RichText::new("Loading changelog...").color(theme.text_muted));
+                                    });
                                 } else {
                                     ui.label(RichText::new("No changelog available").color(theme.text_muted));
                                 }

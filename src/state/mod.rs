@@ -30,4 +30,7 @@ pub enum StateEvent {
 
     /// Log an info message
     LogInfo(String),
+
+    /// Changelog was fetched for a release (tag, body)
+    ChangelogFetched { tag: String, body: String },
 }

@@ -35,6 +35,16 @@ pub enum UpdateCommands {
         tags: Option<String>,
     },
 
+    /// Show changelog for a specific release
+    Changelog {
+        /// Release tag (e.g., "0.H-RELEASE")
+        tag: String,
+
+        /// Skip database cache and fetch fresh from GitHub
+        #[arg(long)]
+        no_cache: bool,
+    },
+
     /// Download an update (without installing)
     Download {
         /// Specific version to download
@@ -89,6 +99,7 @@ pub async fn run(command: UpdateCommands, format: OutputFormat, quiet: bool) -> 
     match command {
         UpdateCommands::Check => check(format).await,
         UpdateCommands::Releases { limit, branch, tags } => releases(limit, branch, tags, format).await,
+        UpdateCommands::Changelog { tag, no_cache } => changelog(tag, no_cache, format, quiet).await,
         UpdateCommands::Download { version } => download(version, format, quiet).await,
         UpdateCommands::Install => install(format, quiet).await,
         UpdateCommands::Apply { keep_saves, remove_old, dry_run } => {
@@ -220,6 +231,72 @@ async fn releases(limit: usize, branch: Option<String>, tags: Option<String>, fo
         }
 
         lines.join("\n")
+    });
+
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct ChangelogResult {
+    tag: String,
+    source: String, // "cache" or "api"
+    body: Option<String>,
+}
+
+async fn changelog(tag: String, no_cache: bool, format: OutputFormat, quiet: bool) -> Result<()> {
+    let db = Database::open().ok();
+    let mut source = "api";
+    let mut body: Option<String> = None;
+
+    // Check DB cache first (unless --no-cache)
+    if !no_cache {
+        if let Some(ref db) = db {
+            if let Ok(Some(cached_body)) = db.get_changelog(&tag) {
+                if !quiet {
+                    eprintln!("Found changelog in cache");
+                }
+                source = "cache";
+                body = Some(cached_body);
+            }
+        }
+    }
+
+    // Fetch from GitHub API if not in cache
+    if body.is_none() {
+        if !quiet {
+            eprintln!("Fetching changelog from GitHub API...");
+        }
+        let client = GitHubClient::new()?;
+        let (release, _rate_limit) = client.get_release_by_tag(&tag).await;
+
+        if let Some(release) = release {
+            body = release.body;
+
+            // Cache in database
+            if let (Some(db), Some(changelog_body)) = (&db, &body) {
+                if let Err(e) = db.store_changelog(&tag, changelog_body) {
+                    eprintln!("Warning: Failed to cache changelog: {}", e);
+                } else if !quiet {
+                    eprintln!("Cached changelog in database");
+                }
+            }
+        }
+    }
+
+    let result = ChangelogResult {
+        tag: tag.clone(),
+        source: source.to_string(),
+        body: body.clone(),
+    };
+
+    print_formatted(&result, format, |r| {
+        match &r.body {
+            Some(text) => format!(
+                "Changelog for {} (from {}):\n\n{}",
+                r.tag, r.source, text
+            ),
+            None => format!("No changelog found for {}", r.tag),
+        }
     });
 
     Ok(())
