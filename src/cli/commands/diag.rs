@@ -5,10 +5,11 @@ use clap::Subcommand;
 use serde::Serialize;
 
 use crate::backup;
-use crate::cli::output::{format_size, print_formatted, print_success, OutputFormat};
+use crate::cli::output::{print_formatted, print_success, OutputFormat};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game;
+use crate::util::format_size;
 
 #[derive(Subcommand, Debug)]
 pub enum DiagCommands {

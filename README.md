@@ -82,6 +82,9 @@ phoenix shell                    # Start REPL with history and tab completion
 - `--json` - Output in JSON format for machine parsing
 - `--quiet` - Suppress non-essential output
 - `--verbose` - Enable debug logging
+- `--no-color` - Disable colored output (automatic when piping)
+
+**Note:** CLI commands can run while the GUI is open. This is intentional for scripting use cases (e.g., scheduled backups via cron). Read operations are safe to run concurrently; write operations (backup create, update install) should be coordinated to avoid conflicts.
 
 ## FAQ
 

@@ -8,8 +8,9 @@ use serde::Serialize;
 use tokio::sync::watch;
 
 use crate::backup::{self, BackupInfo, BackupProgress};
-use crate::cli::output::{format_size, print_error, print_formatted, print_success, OutputFormat};
+use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
 use crate::config::Config;
+use crate::util::format_size;
 
 #[derive(Subcommand, Debug)]
 pub enum BackupCommands {
@@ -186,24 +187,20 @@ async fn create(name: Option<String>, compression: u8, format: OutputFormat, qui
     // Create progress channel
     let (progress_tx, mut progress_rx) = watch::channel(BackupProgress::default());
 
-    // Spawn progress reporter for non-quiet mode
-    if !quiet {
-        let format_clone = format;
+    // Spawn progress reporter (only if TTY and not quiet)
+    let show_progress = should_show_progress(quiet, format);
+    if show_progress {
         tokio::spawn(async move {
             while progress_rx.changed().await.is_ok() {
                 let progress = progress_rx.borrow().clone();
-                if format_clone == OutputFormat::Text {
-                    eprint!(
-                        "\r{}: {}/{}   ",
-                        progress.phase.description(),
-                        progress.files_processed,
-                        progress.total_files
-                    );
-                }
+                eprint!(
+                    "\r{}: {}/{}   ",
+                    progress.phase.description(),
+                    progress.files_processed,
+                    progress.total_files
+                );
             }
-            if format_clone == OutputFormat::Text {
-                eprintln!(); // Clear the line
-            }
+            eprintln!(); // Clear the line
         });
     }
 
@@ -265,24 +262,20 @@ async fn restore(
     // Create progress channel
     let (progress_tx, mut progress_rx) = watch::channel(BackupProgress::default());
 
-    // Spawn progress reporter
-    if !quiet {
-        let format_clone = format;
+    // Spawn progress reporter (only if TTY and not quiet)
+    let show_progress = should_show_progress(quiet, format);
+    if show_progress {
         tokio::spawn(async move {
             while progress_rx.changed().await.is_ok() {
                 let progress = progress_rx.borrow().clone();
-                if format_clone == OutputFormat::Text {
-                    eprint!(
-                        "\r{}: {}/{}   ",
-                        progress.phase.description(),
-                        progress.files_processed,
-                        progress.total_files
-                    );
-                }
+                eprint!(
+                    "\r{}: {}/{}   ",
+                    progress.phase.description(),
+                    progress.files_processed,
+                    progress.total_files
+                );
             }
-            if format_clone == OutputFormat::Text {
-                eprintln!();
-            }
+            eprintln!();
         });
     }
 

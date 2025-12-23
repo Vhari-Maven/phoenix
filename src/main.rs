@@ -78,8 +78,12 @@ fn acquire_single_instance() -> Option<()> {
 fn should_run_cli() -> bool {
     let args: Vec<String> = std::env::args().collect();
     // CLI mode if we have arguments beyond just the executable name
-    // and the first argument looks like a subcommand (not a flag like --help)
     args.len() > 1
+}
+
+/// Check if --verbose or -v flag is present in command-line arguments
+fn is_verbose() -> bool {
+    std::env::args().any(|arg| arg == "--verbose" || arg == "-v")
 }
 
 /// Attach to parent console or allocate a new one for CLI output
@@ -105,6 +109,7 @@ fn attach_console() {
 async fn main() -> Result<()> {
     // Determine mode before doing anything else
     let cli_mode = should_run_cli();
+    let verbose = is_verbose();
 
     // In CLI mode, we need a console for output
     if cli_mode {
@@ -112,11 +117,17 @@ async fn main() -> Result<()> {
     }
 
     // Initialize logging
+    // In CLI mode: warn by default, debug if --verbose
+    // In GUI mode: debug always (for troubleshooting)
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| {
                 if cli_mode {
-                    "phoenix=warn".into()
+                    if verbose {
+                        "phoenix=debug".into()
+                    } else {
+                        "phoenix=warn".into()
+                    }
                 } else {
                     "phoenix=debug,info".into()
                 }

@@ -6,10 +6,11 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use serde::Serialize;
 
-use crate::cli::output::{format_size, print_error, print_formatted, print_success, OutputFormat};
+use crate::cli::output::{print_error, print_formatted, print_success, OutputFormat};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game::{self, GameInfo};
+use crate::util::format_size;
 
 #[derive(Subcommand, Debug)]
 pub enum GameCommands {

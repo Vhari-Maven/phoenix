@@ -1,6 +1,7 @@
 //! Output formatting utilities for CLI
 
 use serde::Serialize;
+use std::io::IsTerminal;
 
 /// Output format for CLI commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,19 +38,13 @@ pub fn print_error(message: &str) {
     eprintln!("Error: {}", message);
 }
 
-/// Format bytes as human-readable size
-pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
+/// Check if stderr is a terminal (for progress output)
+pub fn stderr_is_tty() -> bool {
+    std::io::stderr().is_terminal()
+}
 
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
+/// Check if progress output should be shown.
+/// Returns false if quiet mode is enabled or stderr is not a TTY.
+pub fn should_show_progress(quiet: bool, format: OutputFormat) -> bool {
+    !quiet && format == OutputFormat::Text && stderr_is_tty()
 }

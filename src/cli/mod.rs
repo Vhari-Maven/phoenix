@@ -37,6 +37,10 @@ pub struct OutputOptions {
     /// Increase output verbosity
     #[arg(short, long, global = true)]
     pub verbose: bool,
+
+    /// Disable colored output (also disabled automatically when not a TTY)
+    #[arg(long, global = true)]
+    pub no_color: bool,
 }
 
 impl OutputOptions {

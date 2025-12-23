@@ -3,6 +3,7 @@
 //! Provides a REPL with command history and tab completion.
 
 use anyhow::Result;
+use clap::Parser;
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
@@ -11,7 +12,7 @@ use rustyline::validate::Validator;
 use rustyline::{Config, Editor, Helper};
 
 use super::commands;
-use super::output::OutputFormat;
+use super::{Cli, Commands};
 
 /// Command completer for the shell
 #[derive(Default)]
@@ -167,313 +168,62 @@ fn parse_args(line: &str) -> Vec<String> {
     args
 }
 
-/// Run a single command in the shell
-async fn run_command(args: Vec<String>) -> Result<()> {
+/// Run a single command in the shell.
+/// Returns Ok(true) to continue, Ok(false) to exit gracefully.
+async fn run_command(args: Vec<String>) -> Result<bool> {
     if args.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
 
+    // Handle shell built-in commands
     let cmd = args[0].as_str();
-    let sub = args.get(1).map(|s| s.as_str());
-    let rest: Vec<&str> = args.iter().skip(2).map(|s| s.as_str()).collect();
+    match cmd {
+        "help" => {
+            print_help();
+            return Ok(true);
+        }
+        "exit" | "quit" => {
+            return Ok(false);
+        }
+        _ => {}
+    }
 
-    // Check for flags
-    let json = rest.contains(&"--json");
-    let quiet = rest.contains(&"--quiet") || rest.contains(&"-q");
-    let format = if json {
-        OutputFormat::Json
-    } else {
-        OutputFormat::Text
+    // Build a fake argv for clap: ["phoenix", ...args]
+    let mut argv: Vec<String> = vec!["phoenix".to_string()];
+    argv.extend(args);
+
+    // Parse using clap
+    let cli = match Cli::try_parse_from(&argv) {
+        Ok(cli) => cli,
+        Err(e) => {
+            // Print clap's error message (includes usage hints)
+            println!("{}", e);
+            return Ok(true);
+        }
     };
 
-    match (cmd, sub) {
-        // Built-in commands
-        ("help", _) => {
-            print_help();
-            Ok(())
-        }
-        ("exit" | "quit", _) => {
-            std::process::exit(0);
-        }
-
-        // Game commands
-        ("game", Some("detect")) => {
-            commands::game::run(
-                commands::game::GameCommands::Detect { dir: None },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("game", Some("launch")) => {
-            let params = rest.iter().find(|s| !s.starts_with('-')).map(|s| s.to_string());
-            commands::game::run(
-                commands::game::GameCommands::Launch { params },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("game", Some("info")) => {
-            commands::game::run(
-                commands::game::GameCommands::Info { dir: None },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("game", _) => {
-            println!("Usage: game <detect|launch|info>");
-            Ok(())
-        }
-
-        // Backup commands
-        ("backup", Some("list")) => {
-            commands::backup::run(commands::backup::BackupCommands::List, format, quiet).await
-        }
-        ("backup", Some("create")) => {
-            let name = rest.iter().find(|s| !s.starts_with('-')).map(|s| s.to_string());
-            let compression = rest
-                .iter()
-                .position(|s| *s == "--compression")
-                .and_then(|i| rest.get(i + 1))
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(6);
-            commands::backup::run(
-                commands::backup::BackupCommands::Create { name, compression },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("backup", Some("restore")) => {
-            let name = rest
-                .iter()
-                .find(|s| !s.starts_with('-'))
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            let dry_run = rest.contains(&"--dry-run");
-            let no_safety_backup = rest.contains(&"--no-safety-backup");
-            commands::backup::run(
-                commands::backup::BackupCommands::Restore {
-                    name,
-                    no_safety_backup,
-                    dry_run,
-                },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("backup", Some("delete")) => {
-            let name = rest.iter().find(|s| !s.starts_with('-')).map(|s| s.to_string());
-            let keep = rest
-                .iter()
-                .position(|s| *s == "--keep")
-                .and_then(|i| rest.get(i + 1))
-                .and_then(|s| s.parse().ok());
-            commands::backup::run(
-                commands::backup::BackupCommands::Delete { name, keep },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("backup", Some("verify")) => {
-            let name = rest
-                .iter()
-                .find(|s| !s.starts_with('-'))
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            commands::backup::run(
-                commands::backup::BackupCommands::Verify { name },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("backup", _) => {
-            println!("Usage: backup <list|create|restore|delete|verify>");
-            Ok(())
-        }
-
-        // Update commands
-        ("update", Some("check")) => {
-            commands::update::run(commands::update::UpdateCommands::Check, format, quiet).await
-        }
-        ("update", Some("releases")) => {
-            let limit = rest
-                .iter()
-                .position(|s| *s == "--limit")
-                .and_then(|i| rest.get(i + 1))
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(10);
-            let branch = rest
-                .iter()
-                .position(|s| *s == "--branch")
-                .and_then(|i| rest.get(i + 1))
-                .map(|s| s.to_string());
-            commands::update::run(
-                commands::update::UpdateCommands::Releases { limit, branch },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("update", Some("download")) => {
-            let version = rest
-                .iter()
-                .position(|s| *s == "--version")
-                .and_then(|i| rest.get(i + 1))
-                .map(|s| s.to_string());
-            commands::update::run(
-                commands::update::UpdateCommands::Download { version },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("update", Some("install")) => {
-            commands::update::run(commands::update::UpdateCommands::Install, format, quiet).await
-        }
-        ("update", Some("apply")) => {
-            let keep_saves = rest.contains(&"--keep-saves");
-            let remove_old = rest.contains(&"--remove-old");
-            let dry_run = rest.contains(&"--dry-run");
-            commands::update::run(
-                commands::update::UpdateCommands::Apply {
-                    keep_saves,
-                    remove_old,
-                    dry_run,
-                },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("update", _) => {
-            println!("Usage: update <check|releases|download|install|apply>");
-            Ok(())
-        }
-
-        // Soundpack commands
-        ("soundpack", Some("list")) => {
-            commands::soundpack::run(commands::soundpack::SoundpackCommands::List, format, quiet)
-                .await
-        }
-        ("soundpack", Some("available")) => {
-            commands::soundpack::run(
-                commands::soundpack::SoundpackCommands::Available,
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("soundpack", Some("install")) => {
-            let name = rest.iter().find(|s| !s.starts_with('-')).map(|s| s.to_string());
-            commands::soundpack::run(
-                commands::soundpack::SoundpackCommands::Install { name, file: None },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("soundpack", Some("delete")) => {
-            let name = rest
-                .iter()
-                .find(|s| !s.starts_with('-'))
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            commands::soundpack::run(
-                commands::soundpack::SoundpackCommands::Delete { name },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("soundpack", Some("enable")) => {
-            let name = rest
-                .iter()
-                .find(|s| !s.starts_with('-'))
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            commands::soundpack::run(
-                commands::soundpack::SoundpackCommands::Enable { name },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("soundpack", Some("disable")) => {
-            let name = rest
-                .iter()
-                .find(|s| !s.starts_with('-'))
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            commands::soundpack::run(
-                commands::soundpack::SoundpackCommands::Disable { name },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("soundpack", _) => {
-            println!("Usage: soundpack <list|available|install|delete|enable|disable>");
-            Ok(())
-        }
-
-        // Config commands
-        ("config", Some("show")) => {
-            commands::config::run(commands::config::ConfigCommands::Show, format, quiet).await
-        }
-        ("config", Some("get")) => {
-            let key = rest
-                .iter()
-                .find(|s| !s.starts_with('-'))
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            commands::config::run(commands::config::ConfigCommands::Get { key }, format, quiet)
-                .await
-        }
-        ("config", Some("set")) => {
-            let positional: Vec<&str> = rest.iter().filter(|s| !s.starts_with('-')).copied().collect();
-            let key = positional.first().map(|s| s.to_string()).unwrap_or_default();
-            let value = positional.get(1).map(|s| s.to_string()).unwrap_or_default();
-            commands::config::run(
-                commands::config::ConfigCommands::Set { key, value },
-                format,
-                quiet,
-            )
-            .await
-        }
-        ("config", Some("path")) => {
-            commands::config::run(commands::config::ConfigCommands::Path, format, quiet).await
-        }
-        ("config", _) => {
-            println!("Usage: config <show|get|set|path>");
-            Ok(())
-        }
-
-        // Diag commands
-        ("diag", Some("paths")) => {
-            commands::diag::run(commands::diag::DiagCommands::Paths, format, quiet).await
-        }
-        ("diag", Some("check")) => {
-            commands::diag::run(commands::diag::DiagCommands::Check, format, quiet).await
-        }
-        ("diag", Some("clear-cache")) => {
-            commands::diag::run(commands::diag::DiagCommands::ClearCache, format, quiet).await
-        }
-        ("diag", _) => {
-            println!("Usage: diag <paths|check|clear-cache>");
-            Ok(())
-        }
-
-        _ => {
-            println!("Unknown command: {}. Type 'help' for available commands.", cmd);
-            Ok(())
-        }
+    // Reject nested shell command
+    if matches!(cli.command, Commands::Shell) {
+        println!("Already in shell mode.");
+        return Ok(true);
     }
+
+    // Dispatch to the appropriate command handler
+    let format = cli.output.format();
+    let quiet = cli.output.quiet;
+
+    let result = match cli.command {
+        Commands::Game { command } => commands::game::run(command, format, quiet).await,
+        Commands::Backup { command } => commands::backup::run(command, format, quiet).await,
+        Commands::Update { command } => commands::update::run(command, format, quiet).await,
+        Commands::Soundpack { command } => commands::soundpack::run(command, format, quiet).await,
+        Commands::Config { command } => commands::config::run(command, format, quiet).await,
+        Commands::Diag { command } => commands::diag::run(command, format, quiet).await,
+        Commands::Shell => unreachable!(), // Already handled above
+    };
+
+    result?;
+    Ok(true)
 }
 
 fn print_help() {
@@ -558,8 +308,10 @@ pub async fn run() -> Result<()> {
                 rl.add_history_entry(line)?;
 
                 let args = parse_args(line);
-                if let Err(e) = run_command(args).await {
-                    eprintln!("Error: {}", e);
+                match run_command(args).await {
+                    Ok(true) => continue,  // Command succeeded, keep running
+                    Ok(false) => break,    // Exit requested, break to save history
+                    Err(e) => eprintln!("Error: {}", e),
                 }
             }
             Err(ReadlineError::Interrupted) => {

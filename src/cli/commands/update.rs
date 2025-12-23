@@ -7,12 +7,13 @@ use clap::Subcommand;
 use serde::Serialize;
 use tokio::sync::watch;
 
-use crate::cli::output::{format_size, print_error, print_formatted, print_success, OutputFormat};
+use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game;
 use crate::github::GitHubClient;
 use crate::update::{self, UpdateProgress};
+use crate::util::format_size;
 
 #[derive(Subcommand, Debug)]
 pub enum UpdateCommands {
@@ -241,8 +242,9 @@ async fn download(version: Option<String>, format: OutputFormat, quiet: bool) ->
     // Create progress channel
     let (progress_tx, mut progress_rx) = watch::channel(UpdateProgress::default());
 
-    // Spawn progress reporter
-    if !quiet && format == OutputFormat::Text {
+    // Spawn progress reporter (only if TTY and not quiet)
+    let show_progress = should_show_progress(quiet, format);
+    if show_progress {
         tokio::spawn(async move {
             while progress_rx.changed().await.is_ok() {
                 let p = progress_rx.borrow().clone();
@@ -288,7 +290,7 @@ async fn download(version: Option<String>, format: OutputFormat, quiet: bool) ->
     Ok(())
 }
 
-async fn install(_format: OutputFormat, quiet: bool) -> Result<()> {
+async fn install(format: OutputFormat, quiet: bool) -> Result<()> {
     let config = Config::load()?;
     let game_dir = config
         .game
@@ -327,8 +329,9 @@ async fn install(_format: OutputFormat, quiet: bool) -> Result<()> {
     // Create progress channel
     let (progress_tx, mut progress_rx) = watch::channel(UpdateProgress::default());
 
-    // Spawn progress reporter
-    if !quiet {
+    // Spawn progress reporter (only if TTY and not quiet)
+    let show_progress = should_show_progress(quiet, format);
+    if show_progress {
         tokio::spawn(async move {
             while progress_rx.changed().await.is_ok() {
                 let p = progress_rx.borrow().clone();
@@ -398,8 +401,9 @@ async fn apply(
     // Create progress channel
     let (progress_tx, mut progress_rx) = watch::channel(UpdateProgress::default());
 
-    // Spawn progress reporter
-    if !quiet && format == OutputFormat::Text {
+    // Spawn progress reporter (only if TTY and not quiet)
+    let show_progress = should_show_progress(quiet, format);
+    if show_progress {
         tokio::spawn(async move {
             while progress_rx.changed().await.is_ok() {
                 let p = progress_rx.borrow().clone();

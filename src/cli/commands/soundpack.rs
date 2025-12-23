@@ -7,10 +7,11 @@ use clap::Subcommand;
 use serde::Serialize;
 use tokio::sync::watch;
 
-use crate::cli::output::{format_size, print_error, print_formatted, print_success, OutputFormat};
+use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
 use crate::config::Config;
 use crate::github::GitHubClient;
 use crate::soundpack::{self, SoundpackProgress};
+use crate::util::format_size;
 
 #[derive(Subcommand, Debug)]
 pub enum SoundpackCommands {
@@ -209,8 +210,9 @@ async fn install(
     // Create progress channel
     let (progress_tx, mut progress_rx) = watch::channel(SoundpackProgress::default());
 
-    // Spawn progress reporter
-    if !quiet && format == OutputFormat::Text {
+    // Spawn progress reporter (only if TTY and not quiet)
+    let show_progress = should_show_progress(quiet, format);
+    if show_progress {
         tokio::spawn(async move {
             while progress_rx.changed().await.is_ok() {
                 let p = progress_rx.borrow().clone();
