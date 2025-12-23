@@ -1,6 +1,6 @@
 [package]
 name = "phoenix"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 description = "A fast, native game launcher for Cataclysm: Dark Days Ahead"
 authors = ["Phoenix Contributors"]
@@ -46,6 +46,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # Image loading (for window icon - PNG only to reduce binary size)
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+# CLI
+clap = { version = "4", features = ["derive"] }
+rustyline = "15"
+
 # Utilities
 walkdir = "2"
 sha2 = "0.10"
@@ -63,6 +67,7 @@ windows = { version = "0.58", features = [
     "Win32_Security",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Threading",
+    "Win32_System_Console",
 ] }
 
 [build-dependencies]

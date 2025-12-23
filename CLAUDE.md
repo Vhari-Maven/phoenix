@@ -16,6 +16,7 @@ A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 - **File ops:** remove_dir_all crate (fast directory deletion)
 - **Browser:** open crate (open URLs in default browser)
 - **Windows APIs:** windows crate
+- **CLI:** clap (derive macros), rustyline (interactive shell)
 
 ## Build & Run
 
@@ -23,6 +24,23 @@ A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 cargo build
 cargo run
 ```
+
+## CLI Usage
+
+Running with no arguments opens the GUI. Any subcommand runs in CLI mode:
+
+```bash
+cargo run -- diag check              # Verify installation health
+cargo run -- game detect             # Detect game version
+cargo run -- config show             # Show current configuration
+cargo run -- backup list --json      # List backups as JSON
+cargo run -- update check            # Check for updates
+cargo run -- shell                   # Interactive shell with history/completion
+```
+
+Use `--json` for machine-readable output, `--quiet` to suppress progress.
+
+The interactive shell (`cargo run -- shell`) provides tab completion, command history, and a REPL for running multiple commands without restarting.
 
 ## Releases
 
@@ -47,6 +65,7 @@ Tags containing `alpha`, `beta`, or `rc` are marked as prereleases.
 - Backup/restore system with compression
 - Soundpack management (install from repository or local files)
 - Theme system (Amber, Purple, Cyan, Green, Catppuccin)
+- CLI mode for scripting and automation (all features available via command line)
 
 ## Architecture
 
@@ -69,6 +88,16 @@ src/
 │   ├── backups_tab.rs   # Backup management
 │   ├── soundpacks_tab.rs# Soundpack management
 │   └── settings_tab.rs  # Settings
+├── cli/                 # CLI interface (clap-based)
+│   ├── mod.rs           # CLI argument definitions
+│   ├── output.rs        # Output formatting (text/JSON)
+│   └── commands/        # Command implementations
+│       ├── game.rs      # game detect|launch|info
+│       ├── backup.rs    # backup list|create|restore|delete|verify
+│       ├── update.rs    # update check|releases|download|install|apply
+│       ├── soundpack.rs # soundpack list|available|install|delete|enable|disable
+│       ├── config.rs    # config show|get|set|path
+│       └── diag.rs      # diag paths|check|clear-cache
 ├── task.rs              # Generic task polling helper
 ├── util.rs              # Shared utilities (format_size)
 ├── app_data.rs          # Compile-time embedded data (TOML/JSON configs)

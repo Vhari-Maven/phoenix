@@ -4,6 +4,7 @@
 mod app;
 mod app_data;
 mod backup;
+mod cli;
 mod config;
 mod db;
 mod game;
@@ -18,6 +19,7 @@ mod update;
 mod util;
 
 use anyhow::Result;
+use clap::Parser;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -72,16 +74,84 @@ fn acquire_single_instance() -> Option<()> {
     Some(()) // No-op on non-Windows platforms
 }
 
+/// Check if we should run in CLI mode based on command-line arguments
+fn should_run_cli() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    // CLI mode if we have arguments beyond just the executable name
+    args.len() > 1
+}
+
+/// Check if --verbose or -v flag is present in command-line arguments
+fn is_verbose() -> bool {
+    std::env::args().any(|arg| arg == "--verbose" || arg == "-v")
+}
+
+/// Attach to parent console or allocate a new one for CLI output
+#[cfg(windows)]
+fn attach_console() {
+    use windows::Win32::System::Console::{AttachConsole, AllocConsole, ATTACH_PARENT_PROCESS};
+
+    unsafe {
+        // Try to attach to parent console (e.g., cmd.exe)
+        if AttachConsole(ATTACH_PARENT_PROCESS).is_err() {
+            // If no parent console, allocate a new one
+            let _ = AllocConsole();
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_console() {
+    // No-op on non-Windows platforms
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Determine mode before doing anything else
+    let cli_mode = should_run_cli();
+    let verbose = is_verbose();
+
+    // In CLI mode, we need a console for output
+    if cli_mode {
+        attach_console();
+    }
+
     // Initialize logging
+    // In CLI mode: warn by default, debug if --verbose
+    // In GUI mode: debug always (for troubleshooting)
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "phoenix=debug,info".into()),
+            std::env::var("RUST_LOG").unwrap_or_else(|_| {
+                if cli_mode {
+                    if verbose {
+                        "phoenix=debug".into()
+                    } else {
+                        "phoenix=warn".into()
+                    }
+                } else {
+                    "phoenix=debug,info".into()
+                }
+            }),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Run CLI or GUI
+    if cli_mode {
+        run_cli().await
+    } else {
+        run_gui().await
+    }
+}
+
+/// Run the CLI interface
+async fn run_cli() -> Result<()> {
+    let cli = cli::Cli::parse();
+    cli::run(cli).await
+}
+
+/// Run the GUI interface
+async fn run_gui() -> Result<()> {
     tracing::info!("Starting Phoenix launcher");
 
     // Enforce single instance

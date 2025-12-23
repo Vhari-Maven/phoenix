@@ -22,6 +22,7 @@ The original Python/Qt launcher is feature-rich but can take 10-15 seconds to st
 - **Soundpack Manager** - Install, enable/disable, and delete soundpacks (ZIP)
 - **Theme System** - 5 built-in color themes (Amber, Purple, Cyan, Green, Catppuccin)
 - **Fast Updates** - Optimized update process (~18 seconds vs ~54 seconds naive approach)
+- **CLI Mode** - Full command-line interface for scripting and automation
 
 ## Download
 
@@ -37,6 +38,53 @@ See the [Releases](https://github.com/Vhari-Maven/phoenix/releases) page for the
 4. **Launch** - click the Launch button to play
 
 Phoenix will remember your settings between sessions.
+
+## Command Line Interface
+
+Phoenix includes a full CLI for scripting and automation. Running with no arguments opens the GUI; any subcommand runs in CLI mode.
+
+```bash
+# Game management
+phoenix game detect              # Detect installed game version
+phoenix game launch              # Launch the game
+phoenix game info                # Show detailed game information
+
+# Backups
+phoenix backup list              # List all backups
+phoenix backup create            # Create a new backup
+phoenix backup restore <name>    # Restore a backup
+phoenix backup delete <name>     # Delete a backup
+
+# Updates
+phoenix update check             # Check for available updates
+phoenix update releases          # List available releases
+phoenix update apply             # Download and install latest update
+
+# Soundpacks
+phoenix soundpack list           # List installed soundpacks
+phoenix soundpack available      # List soundpacks in repository
+phoenix soundpack install <name> # Install a soundpack
+
+# Configuration
+phoenix config show              # Show current configuration
+phoenix config get <key>         # Get a specific setting
+phoenix config set <key> <value> # Set a configuration value
+
+# Diagnostics
+phoenix diag paths               # Show all data paths
+phoenix diag check               # Verify installation health
+
+# Interactive shell
+phoenix shell                    # Start REPL with history and tab completion
+```
+
+**Global options:**
+- `--json` - Output in JSON format for machine parsing
+- `--quiet` - Suppress non-essential output
+- `--verbose` - Enable debug logging
+- `--no-color` - Disable colored output (automatic when piping)
+
+**Note:** CLI commands can run while the GUI is open. This is intentional for scripting use cases (e.g., scheduled backups via cron). Read operations are safe to run concurrently; write operations (backup create, update install) should be coordinated to avoid conflicts.
 
 ## FAQ
 

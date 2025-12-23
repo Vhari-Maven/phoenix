@@ -140,6 +140,24 @@ impl Database {
         )?;
         Ok(())
     }
+
+    /// Count the number of cached version entries
+    pub fn count_cached_versions(&self) -> Result<usize> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM exe_hash_cache",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Clear the executable hash cache
+    /// Returns the number of entries cleared
+    pub fn clear_hash_cache(&self) -> Result<usize> {
+        let count = self.count_cached_versions()?;
+        self.conn.execute("DELETE FROM exe_hash_cache", [])?;
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
