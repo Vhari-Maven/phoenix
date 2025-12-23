@@ -221,14 +221,7 @@ pub fn release_config() -> &'static ReleaseConfig {
     static CONFIG: OnceLock<ReleaseConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
         toml::from_str(RELEASE_CONFIG_TOML).unwrap_or_else(|e| {
-            tracing::error!("Failed to parse release_config.toml: {}", e);
-            // Fallback to minimal defaults
-            ReleaseConfig {
-                stable: StableReleaseConfig {
-                    version_letters: vec!["G".to_string(), "F".to_string()],
-                    max_point_release: 5,
-                },
-            }
+            panic!("Failed to parse release_config.toml: {}", e);
         })
     })
 }
@@ -250,13 +243,9 @@ struct StableHashesConfig {
 pub fn stable_versions() -> &'static HashMap<String, String> {
     static HASHES: OnceLock<HashMap<String, String>> = OnceLock::new();
     HASHES.get_or_init(|| {
-        match toml::from_str::<StableHashesConfig>(STABLE_HASHES_TOML) {
-            Ok(config) => config.hashes,
-            Err(e) => {
-                tracing::error!("Failed to parse stable_hashes.toml: {}", e);
-                HashMap::new()
-            }
-        }
+        toml::from_str::<StableHashesConfig>(STABLE_HASHES_TOML)
+            .unwrap_or_else(|e| panic!("Failed to parse stable_hashes.toml: {}", e))
+            .hashes
     })
 }
 
@@ -289,8 +278,7 @@ pub fn soundpacks_repository() -> &'static Vec<RepoSoundpack> {
     static REPO: OnceLock<Vec<RepoSoundpack>> = OnceLock::new();
     REPO.get_or_init(|| {
         serde_json::from_str(SOUNDPACKS_JSON).unwrap_or_else(|e| {
-            tracing::error!("Failed to parse soundpacks.json: {}", e);
-            Vec::new()
+            panic!("Failed to parse soundpacks.json: {}", e);
         })
     })
 }
