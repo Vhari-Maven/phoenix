@@ -1,0 +1,40 @@
+# Migration and Update Configuration
+# Controls how game updates preserve user data
+
+[restore]
+# Directories to restore completely without filtering
+# These contain user data that should always be preserved
+simple_dirs = ["save", "templates", "memorial", "graveyard"]
+
+# Files to skip when restoring config directory
+# These are regenerated and shouldn't be preserved
+skip_files = ["debug.log", "debug.log.prev"]
+
+[archive]
+# Directory name for storing previous version (for rollback)
+directory = ".phoenix_archive"
+
+# Old archive directory (renamed when new archive is created)
+directory_old = ".phoenix_archive_old"
+
+[soundpack]
+# File extensions that indicate custom soundpack content
+# Used to detect user modifications
+content_extensions = ["ogg", "wav", "json"]
+
+# Search depth limits when looking for soundpack.txt in archives
+min_search_depth = 1
+max_search_depth = 5
+
+[download]
+# Temporary file extension for incomplete downloads
+temp_extension = ".part"
+
+# Progress update interval in milliseconds
+progress_interval_ms = 100
+
+# Batch size for extraction progress updates
+extraction_batch_size = 100
+
+# Batch size for soundpack extraction progress
+soundpack_extraction_batch = 50

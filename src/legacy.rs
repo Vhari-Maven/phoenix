@@ -7,6 +7,7 @@
 use std::path::Path;
 use std::time::Instant;
 
+use crate::app_data::launcher_config;
 use crate::backup;
 use crate::config::Config;
 
@@ -77,7 +78,7 @@ fn migrate_backups_to_appdata(game_dir: &Path) -> Option<usize> {
 /// Rename previous_version to .phoenix_archive.
 /// Returns true if migration was performed.
 fn migrate_archive_folder(game_dir: &Path) -> bool {
-    let old = game_dir.join("previous_version");
+    let old = game_dir.join(&launcher_config().legacy.old_archive_dir);
     let new = game_dir.join(".phoenix_archive");
 
     if old.exists() && !new.exists() {

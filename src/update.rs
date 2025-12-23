@@ -13,15 +13,8 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
 
-use crate::migration::{self, MigrationPlan, CONFIG_SKIP_FILES};
-
-/// Directories to always restore completely (no smart filtering)
-const SIMPLE_RESTORE_DIRS: &[&str] = &[
-    "save",      // Player saves - CRITICAL
-    "templates", // Character templates
-    "memorial",  // Memorial files
-    "graveyard", // Graveyard data
-];
+use crate::app_data::{game_config, migration_config};
+use crate::migration::{self, config_skip_files, MigrationPlan};
 
 /// Current phase of the update process
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -130,8 +123,9 @@ pub async fn download_asset(
             .context("Failed to create download directory")?;
     }
 
-    // Download to a temporary .part file
-    let temp_path = dest_path.with_extension("zip.part");
+    // Download to a temporary file using configured extension
+    let temp_ext = format!("zip{}", migration_config().download.temp_extension);
+    let temp_path = dest_path.with_extension(temp_ext);
     let mut file = tokio::fs::File::create(&temp_path)
         .await
         .context("Failed to create temporary download file")?;
@@ -151,10 +145,10 @@ pub async fn download_asset(
 
         downloaded += chunk.len() as u64;
 
-        // Update progress every 100ms
+        // Update progress at configured interval
         let now = Instant::now();
         let elapsed = now.duration_since(last_progress_time);
-        if elapsed >= Duration::from_millis(100) {
+        if elapsed >= Duration::from_millis(migration_config().download.progress_interval_ms) {
             // Calculate speed
             let bytes_since_last = downloaded - last_downloaded;
             let current_speed = (bytes_since_last as f64 / elapsed.as_secs_f64()) as u64;
@@ -207,8 +201,8 @@ pub async fn install_update(
     remove_previous_version: bool,
 ) -> Result<()> {
     let update_start = Instant::now();
-    let archive_dir = game_dir.join(".phoenix_archive");
-    let old_archive_dir = game_dir.join(".phoenix_archive_old");
+    let archive_dir = game_dir.join(&migration_config().archive.directory);
+    let old_archive_dir = game_dir.join(&migration_config().archive.directory_old);
 
     // Phase 1: Archive current installation (fast - uses rename, defers deletion)
     let _ = progress_tx.send(UpdateProgress {
@@ -343,13 +337,15 @@ async fn archive_current_installation(
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        // Skip archive directories and any .part download files
+        // Skip archive directories and any temp download files
         // Also skip save directory if prevent_save_move is enabled (leave saves in place)
-        if name_str == ".phoenix_archive"
-            || name_str == ".phoenix_archive_old"
-            || name_str.ends_with(".part")
-            || (name_str == "save" && prevent_save_move)
-        {
+        let config = migration_config();
+        let is_archive_dir = name_str == config.archive.directory
+            || name_str == config.archive.directory_old;
+        let is_temp_download = name_str.ends_with(&config.download.temp_extension);
+        let is_save_protected = name_str == game_config().directories.save && prevent_save_move;
+
+        if is_archive_dir || is_temp_download || is_save_protected {
             continue;
         }
 
@@ -422,8 +418,9 @@ async fn extract_zip(
                     .with_context(|| format!("Failed to extract file {:?}", outpath))?;
             }
 
-            // Update progress periodically (every 100 files)
-            if i % 100 == 0 || i == total - 1 {
+            // Update progress periodically
+            let batch_size = migration_config().download.extraction_batch_size;
+            if i % batch_size == 0 || i == total - 1 {
                 let current_file = file.name().to_string();
                 let _ = progress_tx.send(UpdateProgress {
                     phase: UpdatePhase::Extracting,
@@ -454,9 +451,10 @@ async fn restore_user_directories_smart(
 ) -> Result<()> {
     // Phase 1: Simple directory restoration
     let mut restored_dirs = Vec::new();
-    for dir_name in SIMPLE_RESTORE_DIRS {
+    let save_dir = &game_config().directories.save;
+    for dir_name in &migration_config().restore.simple_dirs {
         // Skip save if prevent_save_move is enabled
-        if *dir_name == "save" && prevent_save_move {
+        if dir_name == save_dir && prevent_save_move {
             continue;
         }
 
@@ -473,7 +471,7 @@ async fn restore_user_directories_smart(
 
             // Copy from backup
             copy_dir_recursive(&src, &dst).await?;
-            restored_dirs.push(*dir_name);
+            restored_dirs.push(dir_name.clone());
         }
     }
 
@@ -529,7 +527,7 @@ async fn restore_config_directory(previous_dir: &Path, game_dir: &Path) -> Resul
         let name_str = file_name.to_string_lossy();
 
         // Skip debug files
-        if CONFIG_SKIP_FILES.iter().any(|skip| name_str == *skip) {
+        if config_skip_files().iter().any(|skip| name_str == *skip) {
             skipped_count += 1;
             continue;
         }
@@ -752,8 +750,11 @@ async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 /// Verify critical files exist after extraction
 async fn verify_extraction(game_dir: &Path) -> bool {
     // Just check for the executable - the most critical file
-    let exe_exists = game_dir.join("cataclysm-tiles.exe").exists()
-        || game_dir.join("cataclysm.exe").exists();
+    let exe_exists = game_config()
+        .executables
+        .names
+        .iter()
+        .any(|exe| game_dir.join(exe).exists());
 
     if !exe_exists {
         tracing::warn!("Game executable not found after extraction");
@@ -815,9 +816,14 @@ mod tests {
 
     #[test]
     fn test_simple_restore_dirs_contains_critical_directories() {
-        // Ensure save directory is always in simple restore
-        assert!(SIMPLE_RESTORE_DIRS.contains(&"save"), "save directory must be preserved");
-        // Config is handled separately with filtering, not in SIMPLE_RESTORE_DIRS
+        // Ensure save directory is always in simple restore config
+        let simple_dirs = &migration_config().restore.simple_dirs;
+        let save_dir = &game_config().directories.save;
+        assert!(
+            simple_dirs.contains(save_dir),
+            "save directory must be preserved"
+        );
+        // Config is handled separately with filtering, not in simple_dirs
         // Mods are handled via smart migration, not simple restore
     }
 

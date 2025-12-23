@@ -1,0 +1,14 @@
+# CDDA Release Configuration
+# Controls how the launcher searches for stable releases on GitHub
+
+[stable]
+# Known stable version letters (A through J)
+# CDDA uses alphabetical naming: 0.A, 0.B, 0.C, ... 0.G (current), 0.H (future)
+# Listed newest-first for priority when searching
+# Includes future letters (H, I, J) that will return 404 until released
+# CDDA releases ~1 major version per year, so this covers several years
+version_letters = ["J", "I", "H", "G", "F", "E", "D", "C", "B", "A"]
+
+# Maximum point release number to check (e.g., 0.F-3)
+# Set high enough to handle any reasonable point release count
+max_point_release = 10

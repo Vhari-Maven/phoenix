@@ -701,7 +701,7 @@ When finished:
 |------|---------|
 | `src/main.rs` | Entry point, logging setup, icon loading |
 | `src/app.rs` | PhoenixApp struct, main update loop, event handling |
-| `src/config.rs` | Configuration loading/saving (TOML) |
+| `src/config.rs` | User configuration loading/saving (runtime TOML) |
 | `src/task.rs` | `poll_task()` helper for async task polling |
 
 ### State
@@ -719,6 +719,7 @@ When finished:
 
 | File | Purpose |
 |------|---------|
+| `src/app_data.rs` | Compile-time embedded data (TOML/JSON configs from `embedded/`) |
 | `src/backup.rs` | Create/restore/list backups |
 | `src/update.rs` | Download and install updates |
 | `src/github.rs` | GitHub API client, release fetching |

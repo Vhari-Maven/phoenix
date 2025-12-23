@@ -6,17 +6,16 @@
 //! - Downloading and installing soundpacks from the repository
 //! - Enabling/disabling soundpacks via file rename
 //! - Extracting archives (ZIP, RAR, 7z)
+//!
+//! Soundpack repository loaded via `app_data::soundpacks_repository()`.
 
+use crate::app_data::{game_config, migration_config, soundpacks_repository, RepoSoundpack};
 use futures::StreamExt;
-use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
-
-/// Embedded soundpacks repository JSON
-const SOUNDPACKS_JSON: &str = include_str!("../assets/soundpacks.json");
 
 /// Information about an installed soundpack
 #[derive(Debug, Clone)]
@@ -31,24 +30,6 @@ pub struct InstalledSoundpack {
     pub enabled: bool,
     /// Size in bytes
     pub size: u64,
-}
-
-/// Repository soundpack entry (from embedded JSON)
-#[derive(Debug, Clone, Deserialize)]
-pub struct RepoSoundpack {
-    /// Download type: "direct_download" or "browser_download"
-    #[serde(rename = "type")]
-    pub download_type: String,
-    /// Display name (shown in UI)
-    pub viewname: String,
-    /// Internal name (matches soundpack.txt NAME)
-    pub name: String,
-    /// Download URL
-    pub url: String,
-    /// Homepage URL
-    pub homepage: String,
-    /// Optional pre-known size in bytes
-    pub size: Option<u64>,
 }
 
 /// Current phase of soundpack operation
@@ -152,10 +133,7 @@ pub enum SoundpackError {
 
 /// Load the soundpacks repository from embedded JSON
 pub fn load_repository() -> Vec<RepoSoundpack> {
-    serde_json::from_str(SOUNDPACKS_JSON).unwrap_or_else(|e| {
-        tracing::error!("Failed to parse soundpacks.json: {}", e);
-        Vec::new()
-    })
+    soundpacks_repository().clone()
 }
 
 // ============================================================================
@@ -164,15 +142,19 @@ pub fn load_repository() -> Vec<RepoSoundpack> {
 
 /// Get the soundpacks directory for a game installation
 pub fn soundpacks_dir(game_dir: &Path) -> PathBuf {
-    game_dir.join("data").join("sound")
+    let config = game_config();
+    game_dir
+        .join(&config.directories.data)
+        .join(&config.directories.sound)
 }
 
 /// Parse soundpack.txt to extract NAME and VIEW fields
 ///
 /// Returns (name, view_name, enabled) if successful
 pub fn parse_soundpack_txt(soundpack_dir: &Path) -> Option<(String, String, bool)> {
-    let normal = soundpack_dir.join("soundpack.txt");
-    let disabled = soundpack_dir.join("soundpack.txt.disabled");
+    let config = game_config();
+    let normal = soundpack_dir.join(&config.metadata.soundpack_info);
+    let disabled = soundpack_dir.join(&config.metadata.soundpack_info_disabled);
 
     let (file_path, enabled) = if normal.exists() {
         (normal, true)
@@ -284,8 +266,9 @@ pub async fn set_soundpack_enabled(
     soundpack_path: &Path,
     enabled: bool,
 ) -> Result<(), SoundpackError> {
-    let txt_file = soundpack_path.join("soundpack.txt");
-    let disabled_file = soundpack_path.join("soundpack.txt.disabled");
+    let config = game_config();
+    let txt_file = soundpack_path.join(&config.metadata.soundpack_info);
+    let disabled_file = soundpack_path.join(&config.metadata.soundpack_info_disabled);
 
     if enabled {
         if disabled_file.exists() {
@@ -391,8 +374,9 @@ fn extract_zip_archive(
             std::io::copy(&mut file, &mut outfile)?;
         }
 
-        // Update progress every 50 files
-        if i % 50 == 0 || i == total - 1 {
+        // Update progress periodically
+        let batch_size = migration_config().download.soundpack_extraction_batch;
+        if i % batch_size == 0 || i == total - 1 {
             let _ = progress_tx.send(SoundpackProgress {
                 phase: SoundpackPhase::Extracting,
                 files_extracted: i + 1,
@@ -412,12 +396,15 @@ fn extract_zip_archive(
 
 /// Find soundpack.txt in extracted directory (may be nested)
 pub fn find_soundpack_dir(extract_dir: &Path) -> Option<PathBuf> {
+    let game_cfg = game_config();
+    let migration_cfg = migration_config();
     for entry in walkdir::WalkDir::new(extract_dir)
-        .min_depth(1)
-        .max_depth(5)
+        .min_depth(migration_cfg.soundpack.min_search_depth)
+        .max_depth(migration_cfg.soundpack.max_search_depth)
     {
         if let Ok(entry) = entry {
-            if entry.file_name() == "soundpack.txt" || entry.file_name() == "soundpack.txt.disabled"
+            if entry.file_name() == game_cfg.metadata.soundpack_info.as_str()
+                || entry.file_name() == game_cfg.metadata.soundpack_info_disabled.as_str()
             {
                 return entry.path().parent().map(|p| p.to_path_buf());
             }
@@ -467,7 +454,8 @@ pub async fn download_file(
     }
 
     // Download to a temporary .part file
-    let temp_path = dest_path.with_extension("part");
+    let temp_ext = &migration_config().download.temp_extension;
+    let temp_path = dest_path.with_extension(temp_ext.trim_start_matches('.'));
     let mut file = tokio::fs::File::create(&temp_path).await?;
 
     // Stream the response body to disk
@@ -482,10 +470,10 @@ pub async fn download_file(
         file.write_all(&chunk).await?;
         downloaded += chunk.len() as u64;
 
-        // Update progress every 100ms
+        // Update progress periodically
         let now = Instant::now();
         let elapsed = now.duration_since(last_progress_time);
-        if elapsed >= Duration::from_millis(100) {
+        if elapsed >= Duration::from_millis(migration_config().download.progress_interval_ms) {
             let bytes_since_last = downloaded - last_downloaded;
             let current_speed = (bytes_since_last as f64 / elapsed.as_secs_f64()) as u64;
 

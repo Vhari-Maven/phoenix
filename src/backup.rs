@@ -6,6 +6,8 @@
 //! - Restoring backups with optional pre-restore backup
 //! - Automatic backups before launch, after end, and before updates
 //! - Backup retention enforcement
+//!
+//! Configuration loaded via `app_data::game_config()` and `app_data::launcher_config()`.
 
 use chrono::{DateTime, Local};
 use std::fs::{self, File};
@@ -17,11 +19,9 @@ use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+use crate::app_data::{game_config, launcher_config};
 use crate::config::Config;
 use crate::util::format_size;
-
-/// Files that indicate a world directory
-const WORLD_FILES: &[&str] = &["master.gsav", "worldoptions.json", "worldoptions.txt"];
 
 /// Errors that can occur during backup operations
 #[derive(Error, Debug)]
@@ -169,7 +169,7 @@ pub fn backup_dir() -> PathBuf {
 
 /// Get the old backup directory path (for migration)
 pub fn legacy_backup_dir(game_dir: &Path) -> PathBuf {
-    game_dir.join("save_backups")
+    game_dir.join(&launcher_config().legacy.old_backup_dir)
 }
 
 /// List all backups in the backup directory
@@ -210,6 +210,9 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, BackupError> {
 fn read_backup_info(path: &Path) -> Option<BackupInfo> {
     use std::collections::HashSet;
 
+    let game_cfg = game_config();
+    let launcher_cfg = launcher_config();
+
     let file = File::open(path).ok()?;
     let metadata = file.metadata().ok()?;
     let modified: DateTime<Local> = metadata.modified().ok()?.into();
@@ -232,16 +235,16 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
             // Path format: save/WorldName/marker_file
             if parts.len() == 3 {
                 let filename = parts[2];
-                if WORLD_FILES.contains(&filename) {
+                if game_cfg.world.marker_files.iter().any(|f| f == filename) {
                     worlds.insert(parts[1].to_string());
                 }
             }
 
-            // Count characters: .sav or .sav.zzip files at depth 2 (save/world/character.sav)
+            // Count characters: files with save extensions at depth 2 (save/world/character.sav)
             // CDDA uses .sav.zzip for compressed saves in newer versions
             if parts.len() == 3 {
                 let filename = parts[2];
-                if filename.ends_with(".sav") || filename.ends_with(".sav.zzip") {
+                if game_cfg.world.save_extensions.iter().any(|ext| filename.ends_with(ext.as_str())) {
                     characters_count += 1;
                 }
             }
@@ -256,7 +259,7 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
         .unwrap_or("unknown")
         .to_string();
 
-    let is_auto = name.starts_with("auto_");
+    let is_auto = name.starts_with(&launcher_cfg.backup.auto_backup_prefix);
 
     Some(BackupInfo {
         name,
@@ -272,20 +275,26 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
 
 /// Validate a backup name
 fn validate_backup_name(name: &str) -> Result<(), BackupError> {
+    let config = launcher_config();
+
     if name.is_empty() {
         return Err(BackupError::InvalidName("Name cannot be empty".to_string()));
     }
 
-    if name.len() > 100 {
-        return Err(BackupError::InvalidName("Name too long (max 100 chars)".to_string()));
+    if name.len() > config.backup.max_name_length {
+        return Err(BackupError::InvalidName(format!(
+            "Name too long (max {} chars)",
+            config.backup.max_name_length
+        )));
     }
 
-    // Allow alphanumeric, underscore, dash, and space
+    // Allow alphanumeric plus configured special characters
+    let allowed_chars = &config.backup.allowed_name_chars;
     for c in name.chars() {
-        if !c.is_alphanumeric() && c != '_' && c != '-' && c != ' ' {
+        if !c.is_alphanumeric() && !allowed_chars.contains(c) {
             return Err(BackupError::InvalidName(format!(
-                "Invalid character '{}'. Only letters, numbers, underscore, dash, and space allowed.",
-                c
+                "Invalid character '{}'. Only letters, numbers, and '{}' allowed.",
+                c, allowed_chars
             )));
         }
     }
@@ -302,7 +311,7 @@ pub async fn create_backup(
 ) -> Result<BackupInfo, BackupError> {
     validate_backup_name(name)?;
 
-    let save_dir = game_dir.join("save");
+    let save_dir = game_dir.join(&game_config().directories.save);
     if !save_dir.exists() {
         return Err(BackupError::SaveDirNotFound(save_dir));
     }
@@ -344,7 +353,7 @@ fn create_backup_sync(
     compression_level: u8,
     progress_tx: watch::Sender<BackupProgress>,
 ) -> Result<BackupInfo, BackupError> {
-    let save_dir = game_dir.join("save");
+    let save_dir = game_dir.join(&game_config().directories.save);
     let backup_path = backup_dir();
     let backup_file = backup_path.join(format!("{}.zip", name));
 
@@ -460,7 +469,7 @@ pub async fn restore_backup(
         return Err(BackupError::BackupNotFound(backup_name.to_string()));
     }
 
-    let save_dir = game_dir.join("save");
+    let save_dir = game_dir.join(&game_config().directories.save);
 
     // Optionally backup current saves first
     if backup_current_first && save_dir.exists() {
@@ -489,7 +498,7 @@ fn restore_backup_sync(
     backup_file: &Path,
     progress_tx: watch::Sender<BackupProgress>,
 ) -> Result<(), BackupError> {
-    let save_dir = game_dir.join("save");
+    let save_dir = game_dir.join(&game_config().directories.save);
 
     // Phase 1: Move current saves to temp
     let _ = progress_tx.send(BackupProgress {
@@ -587,7 +596,7 @@ pub async fn create_auto_backup(
     max_count: u32,
     progress_tx: watch::Sender<BackupProgress>,
 ) -> Result<Option<BackupInfo>, BackupError> {
-    let save_dir = game_dir.join("save");
+    let save_dir = game_dir.join(&game_config().directories.save);
 
     // Check if there are saves to backup
     if !save_dir.exists() {
