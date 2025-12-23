@@ -26,6 +26,7 @@ Phoenix is a Windows-native launcher for CDDA that provides:
 - **Backups**: Create/restore compressed save backups
 - **Soundpacks**: Install soundpacks from a curated repository or local files
 - **Theming**: Multiple color themes (Amber, Purple, Cyan, Green, Catppuccin)
+- **CLI Mode**: Full command-line interface for scripting and automation
 
 ### Tech Stack
 
@@ -38,6 +39,7 @@ Phoenix is a Windows-native launcher for CDDA that provides:
 | Archive Handling | zip crate |
 | Database | SQLite (rusqlite) |
 | Config | TOML (serde) |
+| CLI | clap (derive macros) |
 
 ### Why These Choices?
 
@@ -739,6 +741,19 @@ When finished:
 | `src/ui/backups_tab.rs` | Backups tab rendering |
 | `src/ui/soundpacks_tab.rs` | Soundpacks tab rendering |
 | `src/ui/settings_tab.rs` | Settings tab rendering |
+
+### CLI
+
+| File | Purpose |
+|------|---------|
+| `src/cli/mod.rs` | CLI argument definitions (clap), entry point |
+| `src/cli/output.rs` | Output formatting (text/JSON), shared utilities |
+| `src/cli/commands/game.rs` | `game detect\|launch\|info` commands |
+| `src/cli/commands/backup.rs` | `backup list\|create\|restore\|delete\|verify` commands |
+| `src/cli/commands/update.rs` | `update check\|releases\|download\|install\|apply` commands |
+| `src/cli/commands/soundpack.rs` | `soundpack list\|available\|install\|delete\|enable\|disable` commands |
+| `src/cli/commands/config.rs` | `config show\|get\|set\|path` commands |
+| `src/cli/commands/diag.rs` | `diag paths\|check\|clear-cache` commands |
 
 ---
 
