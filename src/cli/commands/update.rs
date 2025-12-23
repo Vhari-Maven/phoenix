@@ -29,6 +29,10 @@ pub enum UpdateCommands {
         /// Filter by branch (stable or experimental)
         #[arg(long)]
         branch: Option<String>,
+
+        /// Fetch specific tags (comma-separated, e.g. "0.H-RELEASE,0.G")
+        #[arg(long)]
+        tags: Option<String>,
     },
 
     /// Download an update (without installing)
@@ -84,7 +88,7 @@ struct ReleasesResult {
 pub async fn run(command: UpdateCommands, format: OutputFormat, quiet: bool) -> Result<()> {
     match command {
         UpdateCommands::Check => check(format).await,
-        UpdateCommands::Releases { limit, branch } => releases(limit, branch, format).await,
+        UpdateCommands::Releases { limit, branch, tags } => releases(limit, branch, tags, format).await,
         UpdateCommands::Download { version } => download(version, format, quiet).await,
         UpdateCommands::Install => install(format, quiet).await,
         UpdateCommands::Apply { keep_saves, remove_old, dry_run } => {
@@ -154,13 +158,17 @@ async fn check(format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-async fn releases(limit: usize, branch: Option<String>, format: OutputFormat) -> Result<()> {
+async fn releases(limit: usize, branch: Option<String>, tags: Option<String>, format: OutputFormat) -> Result<()> {
     let config = Config::load()?;
     let branch = branch.unwrap_or_else(|| config.game.branch.clone());
 
     let client = GitHubClient::new()?;
 
-    let releases = if branch == "stable" {
+    let releases = if let Some(tags_str) = tags {
+        // Fetch specific tags directly
+        let tag_list: Vec<&str> = tags_str.split(',').map(|s| s.trim()).collect();
+        client.get_releases_by_tags(&tag_list).await?.data
+    } else if branch == "stable" {
         client.get_stable_releases().await?.data
     } else {
         client.get_experimental_releases().await?.data
