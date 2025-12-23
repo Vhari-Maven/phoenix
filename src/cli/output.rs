@@ -9,18 +9,6 @@ pub enum OutputFormat {
     Json,
 }
 
-/// Print a value in the specified format
-pub fn print_output<T: Serialize + std::fmt::Display>(value: &T, format: OutputFormat) {
-    match format {
-        OutputFormat::Text => println!("{}", value),
-        OutputFormat::Json => {
-            if let Ok(json) = serde_json::to_string_pretty(value) {
-                println!("{}", json);
-            }
-        }
-    }
-}
-
 /// Print a serializable value as JSON or use custom text formatter
 pub fn print_formatted<T, F>(value: &T, format: OutputFormat, text_formatter: F)
 where
@@ -47,15 +35,6 @@ pub fn print_success(message: &str, quiet: bool) {
 /// Print an error message (never suppressed)
 pub fn print_error(message: &str) {
     eprintln!("Error: {}", message);
-}
-
-/// Print a status line with a check mark or X
-pub fn print_status(ok: bool, message: &str) {
-    if ok {
-        println!("[OK] {}", message);
-    } else {
-        println!("[  ] {}", message);
-    }
 }
 
 /// Format bytes as human-readable size
