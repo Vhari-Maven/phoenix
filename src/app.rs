@@ -15,7 +15,9 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
+use anyhow::Result;
 use eframe::egui::{self, RichText};
+use tokio::task::JoinHandle;
 
 use crate::config::Config;
 use crate::db::Database;
@@ -24,6 +26,7 @@ use crate::github::GitHubClient;
 use crate::state::{
     BackupState, ReleasesState, SoundpackState, StateEvent, Tab, UiState, UpdateParams, UpdateState,
 };
+use crate::task::{poll_task, PollResult};
 
 /// Main application state
 pub struct PhoenixApp {
@@ -38,6 +41,8 @@ pub struct PhoenixApp {
     pub(crate) status_message: String,
     /// GitHub API client
     pub(crate) github_client: GitHubClient,
+    /// Background task for refining game version via hash lookup
+    version_refine_task: Option<JoinHandle<Result<GameInfo>>>,
 
     // Grouped state
     /// UI state (theme, tabs, dialogs)
@@ -79,19 +84,32 @@ impl PhoenixApp {
             phase_start.elapsed().as_secs_f32() * 1000.0
         );
 
-        // Try to detect game if directory is configured
+        // Try to detect game if directory is configured (fast path - no hash)
         let phase_start = Instant::now();
         let game_info = config.game.directory.as_ref().and_then(|dir| {
-            game::detect_game_with_db(&PathBuf::from(dir), db.as_ref())
+            game::detect_game_fast(&PathBuf::from(dir))
                 .ok()
                 .flatten()
         });
         if config.game.directory.is_some() {
             tracing::info!(
-                "Game detection in {:.1}ms",
+                "Game detection (fast) in {:.1}ms",
                 phase_start.elapsed().as_secs_f32() * 1000.0
             );
         }
+
+        // Spawn background task to refine version via hash lookup
+        let version_refine_task = if let Some(ref info) = game_info {
+            let info_clone = info.clone();
+            let db_path = Database::db_path().ok();
+            Some(tokio::spawn(async move {
+                // Open a separate database connection for the background task
+                let db = db_path.and_then(|_| Database::open().ok());
+                game::refine_version_with_hash(&info_clone, db.as_ref())
+            }))
+        } else {
+            None
+        };
 
         let status_message = if let Some(ref info) = game_info {
             format!("Game detected: {}", info.version_display())
@@ -113,6 +131,7 @@ impl PhoenixApp {
             game_info,
             status_message,
             github_client,
+            version_refine_task,
             ui: UiState::new(current_theme),
             releases: ReleasesState::default(),
             update: UpdateState::default(),
@@ -162,6 +181,17 @@ impl PhoenixApp {
                         tracing::debug!("Cached changelog for {}", tag);
                     }
                 }
+            }
+            StateEvent::GameVersionRefined(info) => {
+                // Update with refined version info (may now show as stable)
+                let version_changed = self.game_info.as_ref().map(|g| g.version_display())
+                    != Some(info.version_display());
+                if version_changed {
+                    tracing::info!("Version refined to: {} (stable: {})",
+                        info.version_display(), info.is_stable());
+                    self.status_message = format!("Game detected: {}", info.version_display());
+                }
+                self.game_info = Some(info);
             }
         }
     }
@@ -457,6 +487,21 @@ impl eframe::App for PhoenixApp {
         // Poll async tasks and handle events
         let game_dir = self.config.game.directory.as_ref().map(PathBuf::from);
         let game_dir_ref = game_dir.as_deref();
+
+        // Poll version refinement task
+        match poll_task(&mut self.version_refine_task) {
+            PollResult::Complete(Ok(Ok(info))) => {
+                self.handle_event(StateEvent::GameVersionRefined(info));
+            }
+            PollResult::Complete(Ok(Err(e))) => {
+                tracing::warn!("Version refinement failed: {}", e);
+            }
+            PollResult::Complete(Err(e)) => {
+                tracing::warn!("Version refinement task panicked: {}", e);
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
+        }
 
         let release_events = self.releases.poll(ctx, &self.config.game.branch);
         self.handle_events(release_events);

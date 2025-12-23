@@ -50,13 +50,11 @@ impl GameInfo {
     }
 }
 
-/// Detect game installation with optional database for version lookup
+/// Fast game detection - only uses VERSION.txt, no hash calculation
 ///
-/// Optimized flow:
-/// 1. Try VERSION.txt first (fast - experimental builds always have this)
-/// 2. Only calculate SHA256 if VERSION.txt missing (needed for stable lookup)
-/// 3. Use cached hash when possible to avoid expensive recalculation
-pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Option<GameInfo>> {
+/// This is used for immediate startup feedback. Use `refine_version_with_hash`
+/// afterwards to check if it's actually a stable release.
+pub fn detect_game_fast(directory: &Path) -> Result<Option<GameInfo>> {
     let config = game_config();
 
     // Look for game executable
@@ -69,29 +67,8 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
         return Ok(None);
     };
 
-    // Try VERSION.txt first (experimental builds always have this)
-    let version_txt_info = read_version_txt(directory, config);
-
-    // Check hash to identify stable releases (even if VERSION.txt exists)
-    // Use cached hash when possible to avoid expensive recalculation
-    let sha256 = get_or_calculate_sha256(&executable, db)?;
-
-    // Look up version from database/embedded config (for stable releases)
-    let stable_version_info = if let Some(db) = db {
-        match db.get_version(sha256.as_str()) {
-            Ok(info) => info,
-            Err(e) => {
-                tracing::warn!("Failed to look up version: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // Prefer stable version info if hash matches a known stable release,
-    // otherwise fall back to VERSION.txt info
-    let version_info = stable_version_info.or(version_txt_info);
+    // Try VERSION.txt (fast path)
+    let version_info = read_version_txt(directory, config);
 
     // Calculate saves size
     let saves_dir = directory.join(&config.directories.save);
@@ -106,6 +83,54 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
         version_info,
         saves_size,
     }))
+}
+
+/// Refine version detection by calculating hash and checking for stable release
+///
+/// This is the expensive operation that should be run in the background.
+/// Returns updated GameInfo if the hash matches a known stable release.
+pub fn refine_version_with_hash(info: &GameInfo, db: Option<&Database>) -> Result<GameInfo> {
+    let executable = &info.executable;
+
+    // Calculate hash (this is the slow part)
+    let sha256 = get_or_calculate_sha256(executable, db)?;
+
+    // Look up version from database/embedded config (for stable releases)
+    let stable_version_info = if let Some(db) = db {
+        match db.get_version(sha256.as_str()) {
+            Ok(info) => info,
+            Err(e) => {
+                tracing::warn!("Failed to look up version: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // If we found a stable version, use that; otherwise keep original
+    let version_info = stable_version_info.or_else(|| info.version_info.clone());
+
+    Ok(GameInfo {
+        executable: info.executable.clone(),
+        version_info,
+        saves_size: info.saves_size,
+    })
+}
+
+/// Detect game installation with optional database for version lookup
+///
+/// This performs full detection including hash calculation. Use `detect_game_fast`
+/// followed by `refine_version_with_hash` for async startup.
+pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Option<GameInfo>> {
+    // Fast detection first
+    let Some(info) = detect_game_fast(directory)? else {
+        return Ok(None);
+    };
+
+    // Refine with hash lookup
+    let refined = refine_version_with_hash(&info, db)?;
+    Ok(Some(refined))
 }
 
 /// Get file metadata (size and mtime) for cache key
