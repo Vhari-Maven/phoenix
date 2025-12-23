@@ -4,6 +4,7 @@ use eframe::egui::{self, Color32, CornerRadius, RichText, Vec2};
 use std::path::PathBuf;
 
 use crate::app::PhoenixApp;
+use crate::app_data::launcher_config;
 use crate::config::Config;
 use crate::state::Tab;
 use super::theme::Theme;
@@ -94,11 +95,12 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                 ui.add_space(8.0);
 
                 // Links
+                let urls = &launcher_config().urls;
                 if ui.link("GitHub").clicked() {
-                    let _ = open::that("https://github.com/Vhari-Maven/phoenix");
+                    let _ = open::that(&urls.project_repository);
                 }
                 if ui.link("CDDA Website").clicked() {
-                    let _ = open::that("https://cataclysmdda.org/");
+                    let _ = open::that(&urls.cdda_website);
                 }
 
                 ui.add_space(12.0);

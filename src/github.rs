@@ -13,15 +13,13 @@
 //!   efficiently without pagination
 //!
 //! Rate limiting is tracked and exposed via `RateLimitInfo` for UI display.
+//!
+//! Configuration loaded via `app_data::launcher_config()` and `app_data::release_config()`.
 
 use anyhow::Result;
 use serde::Deserialize;
 
-/// GitHub API base URL
-const GITHUB_API_BASE: &str = "https://api.github.com";
-
-/// Repository for CDDA game releases
-const CDDA_REPO: &str = "CleverRaven/Cataclysm-DDA";
+use crate::app_data::{launcher_config, release_config};
 
 /// User agent for API requests
 const USER_AGENT: &str = concat!("Phoenix-Launcher/", env!("CARGO_PKG_VERSION"));
@@ -71,9 +69,10 @@ impl RateLimitInfo {
         Self { remaining, reset_at }
     }
 
-    /// Check if rate limit is low (≤10 remaining)
+    /// Check if rate limit is low (at or below warning threshold)
     pub fn is_low(&self) -> bool {
-        self.remaining.map(|r| r <= 10).unwrap_or(false)
+        let threshold = launcher_config().github.rate_limit_warning_threshold;
+        self.remaining.map(|r| r <= threshold).unwrap_or(false)
     }
 
     /// Get human-readable time until reset
@@ -119,9 +118,10 @@ impl GitHubClient {
     /// Fetch a release by tag name (returns None if tag doesn't exist)
     /// Also returns rate limit info from the response
     async fn get_release_by_tag(&self, tag: &str) -> (Option<Release>, RateLimitInfo) {
+        let github = &launcher_config().github;
         let url = format!(
             "{}/repos/{}/releases/tags/{}",
-            GITHUB_API_BASE, CDDA_REPO, tag
+            github.api_base, github.repository, tag
         );
 
         let response = match self
@@ -147,23 +147,15 @@ impl GitHubClient {
         }
     }
 
-    /// Known stable version letters (A through J)
-    /// Includes future letters (H, I, J) that will return 404 until released.
-    /// CDDA releases ~1 major version per year, so this covers several years.
-    const STABLE_VERSIONS: &'static [char] = &['J', 'I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A'];
-
-    /// Maximum point release number to check (e.g., 0.F-3)
-    /// Set high enough to handle any reasonable point release count.
-    const MAX_POINT_RELEASE: u8 = 10;
-
     /// Generate candidate stable tags to try
     /// Returns tags in priority order (latest point release first for each version)
     fn generate_stable_tag_candidates() -> Vec<String> {
+        let config = release_config();
         let mut candidates = Vec::new();
 
-        for &letter in Self::STABLE_VERSIONS {
+        for letter in &config.stable.version_letters {
             // Try point releases first (highest to lowest), then base version
-            for point in (0..=Self::MAX_POINT_RELEASE).rev() {
+            for point in (0..=config.stable.max_point_release).rev() {
                 if point == 0 {
                     candidates.push(format!("0.{}", letter));
                 } else {
@@ -236,11 +228,12 @@ impl GitHubClient {
     }
 
     /// Fetch experimental releases (recent builds from releases list)
-    pub async fn get_experimental_releases(&self, per_page: u32) -> Result<FetchResult<Vec<Release>>> {
+    pub async fn get_experimental_releases(&self) -> Result<FetchResult<Vec<Release>>> {
         let start = std::time::Instant::now();
+        let github = &launcher_config().github;
         let url = format!(
             "{}/repos/{}/releases?per_page={}",
-            GITHUB_API_BASE, CDDA_REPO, per_page
+            github.api_base, github.repository, github.releases_per_page
         );
 
         let response = self

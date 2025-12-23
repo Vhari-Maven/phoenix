@@ -109,7 +109,7 @@ impl ReleasesState {
             if is_stable {
                 client.get_stable_releases().await
             } else {
-                client.get_experimental_releases(50).await
+                client.get_experimental_releases().await
             }
         }));
 

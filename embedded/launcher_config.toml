@@ -1,0 +1,47 @@
+# Phoenix Launcher Configuration
+# Application-level settings and external service configuration
+
+[window]
+# Initial window dimensions [width, height]
+initial_size = [800.0, 750.0]
+
+# Minimum window dimensions [width, height]
+min_size = [600.0, 500.0]
+
+# Window title
+title = "Phoenix - CDDA Launcher"
+
+[github]
+# GitHub API base URL
+api_base = "https://api.github.com"
+
+# CDDA repository identifier
+repository = "CleverRaven/Cataclysm-DDA"
+
+# Number of experimental releases to fetch per API call
+releases_per_page = 50
+
+# Rate limit threshold for "low" warning
+rate_limit_warning_threshold = 10
+
+[backup]
+# Maximum backup name length
+max_name_length = 100
+
+# Allowed special characters in backup names (besides alphanumeric)
+allowed_name_chars = "_- "
+
+# Auto-backup filename prefix
+auto_backup_prefix = "auto_"
+
+[urls]
+# Links shown in About dialog
+project_repository = "https://github.com/Vhari-Maven/phoenix"
+cdda_website = "https://cataclysmdda.org/"
+
+[legacy]
+# Old backup directory name (for one-time migration)
+old_backup_dir = "save_backups"
+
+# Old archive directory name (for one-time migration)
+old_archive_dir = "previous_version"

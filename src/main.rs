@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod app_data;
 mod backup;
 mod config;
 mod db;
@@ -19,6 +20,8 @@ mod util;
 use anyhow::Result;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use crate::app_data::launcher_config;
 
 #[cfg(windows)]
 use windows::Win32::Foundation::HANDLE;
@@ -109,10 +112,11 @@ async fn main() -> Result<()> {
     let icon = load_icon().map(Arc::new);
 
     // Configure native options
+    let config = launcher_config();
     let viewport = egui::ViewportBuilder::default()
-        .with_inner_size([800.0, 750.0])
-        .with_min_inner_size([600.0, 500.0])
-        .with_title("Phoenix - CDDA Launcher");
+        .with_inner_size(config.window.initial_size)
+        .with_min_inner_size(config.window.min_size)
+        .with_title(&config.window.title);
 
     let viewport = if let Some(icon) = icon {
         viewport.with_icon(icon)

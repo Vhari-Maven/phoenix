@@ -1,0 +1,57 @@
+# CDDA Game Configuration
+# Defines game-specific paths, filenames, and detection patterns
+
+[executables]
+# Executable filenames to search for when detecting game installation
+# Order matters: first found is used
+names = ["cataclysm-tiles.exe", "cataclysm.exe"]
+
+[directories]
+# Save directory name within game folder
+save = "save"
+
+# Data directory structure for assets
+data = "data"
+sound = "sound"
+
+[version]
+# Version file name
+filename = "VERSION.txt"
+
+# Parsing patterns for VERSION.txt
+commit_sha_prefix = "commit sha:"
+commit_date_prefix = "commit date:"
+build_number_prefix = "build number:"
+
+# SHA hash display truncation length
+sha_display_length = 7
+
+# Minimum build number length to treat as date-based version
+min_build_number_length = 10
+
+# Character positions for date format validation (YYYY-MM-DD)
+# Used to check if build number looks like a date
+date_dash_positions = [4, 7]
+
+[world]
+# Files that identify a directory as a world/save
+# Used for backup metadata extraction
+marker_files = ["master.gsav", "worldoptions.json", "worldoptions.txt"]
+
+# Character save file extensions
+save_extensions = [".sav", ".sav.zzip"]
+
+[metadata]
+# Mod metadata filename
+mod_info = "modinfo.json"
+mod_info_disabled = "modinfo.json.disabled"
+
+# Tileset metadata filename
+tileset_info = "tileset.txt"
+
+# Soundpack metadata filename
+soundpack_info = "soundpack.txt"
+soundpack_info_disabled = "soundpack.txt.disabled"
+
+# Field name for extracting asset names from metadata files
+name_field = "NAME"

@@ -383,7 +383,7 @@ impl PhoenixApp {
     /// Install a soundpack from the repository
     pub(crate) fn install_soundpack(
         &mut self,
-        repo_soundpack: crate::soundpack::RepoSoundpack,
+        repo_soundpack: crate::app_data::RepoSoundpack,
         game_dir: &std::path::Path,
     ) {
         self.soundpack.install(repo_soundpack, game_dir);

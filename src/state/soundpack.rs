@@ -6,8 +6,9 @@ use eframe::egui;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use crate::app_data::RepoSoundpack;
 use crate::soundpack::{
-    self, InstalledSoundpack, RepoSoundpack, SoundpackError, SoundpackPhase, SoundpackProgress,
+    self, InstalledSoundpack, SoundpackError, SoundpackPhase, SoundpackProgress,
 };
 use crate::state::StateEvent;
 use crate::task::{poll_task, PollResult};

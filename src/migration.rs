@@ -3,11 +3,14 @@
 //! This module handles identity-based detection of custom mods, tilesets,
 //! soundpacks, and fonts to avoid overwriting new official content with old versions.
 
+use crate::app_data::{game_config, migration_config};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-/// Files to skip during config restoration
-pub const CONFIG_SKIP_FILES: &[&str] = &["debug.log", "debug.log.prev"];
+/// Get files to skip during config restoration
+pub fn config_skip_files() -> &'static [String] {
+    &migration_config().restore.skip_files
+}
 
 /// Represents a mod with its identifier and path
 #[derive(Debug, Clone)]
@@ -82,8 +85,9 @@ pub struct MigrationPlan {
 ///
 /// Also checks for .disabled extension on the JSON file.
 pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
-    let json_file = mod_dir.join("modinfo.json");
-    let disabled_file = mod_dir.join("modinfo.json.disabled");
+    let metadata = &game_config().metadata;
+    let json_file = mod_dir.join(&metadata.mod_info);
+    let disabled_file = mod_dir.join(&metadata.mod_info_disabled);
 
     let file_path = if json_file.exists() {
         json_file
@@ -130,9 +134,9 @@ pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
 /// Parse a tileset.txt or soundpack.txt file to extract the NAME field.
 ///
 /// Format: `NAME <name>` where name may contain spaces and commas are stripped.
-fn parse_asset_name(asset_dir: &Path, filename: &str) -> Option<String> {
+fn parse_asset_name(asset_dir: &Path, filename: &str, disabled_filename: &str) -> Option<String> {
     let normal_file = asset_dir.join(filename);
-    let disabled_file = asset_dir.join(format!("{}.disabled", filename));
+    let disabled_file = asset_dir.join(disabled_filename);
 
     let file_path = if normal_file.exists() {
         normal_file
@@ -146,9 +150,10 @@ fn parse_asset_name(asset_dir: &Path, filename: &str) -> Option<String> {
     let content = std::fs::read(&file_path).ok()?;
     let text = String::from_utf8_lossy(&content);
 
+    let name_field = &game_config().metadata.name_field;
     for line in text.lines() {
-        if line.starts_with("NAME") {
-            // Find first space after NAME
+        if line.starts_with(name_field) {
+            // Find first space after the name field
             if let Some(space_idx) = line.find(' ') {
                 let name = line[space_idx..].trim().replace(',', "");
                 if !name.is_empty() {
@@ -163,7 +168,10 @@ fn parse_asset_name(asset_dir: &Path, filename: &str) -> Option<String> {
 
 /// Parse tileset.txt to get tileset info
 pub fn parse_tileset_info(tileset_dir: &Path) -> Option<TilesetInfo> {
-    let name = parse_asset_name(tileset_dir, "tileset.txt")?;
+    let metadata = &game_config().metadata;
+    // tileset.txt doesn't have a disabled variant in config, construct it
+    let disabled_filename = format!("{}.disabled", metadata.tileset_info);
+    let name = parse_asset_name(tileset_dir, &metadata.tileset_info, &disabled_filename)?;
     Some(TilesetInfo {
         name,
         path: tileset_dir.to_path_buf(),
@@ -172,7 +180,12 @@ pub fn parse_tileset_info(tileset_dir: &Path) -> Option<TilesetInfo> {
 
 /// Parse soundpack.txt to get soundpack info
 pub fn parse_soundpack_info(soundpack_dir: &Path) -> Option<SoundpackInfo> {
-    let name = parse_asset_name(soundpack_dir, "soundpack.txt")?;
+    let metadata = &game_config().metadata;
+    let name = parse_asset_name(
+        soundpack_dir,
+        &metadata.soundpack_info,
+        &metadata.soundpack_info_disabled,
+    )?;
     Some(SoundpackInfo {
         name,
         path: soundpack_dir.to_path_buf(),
@@ -308,11 +321,12 @@ pub fn find_custom_soundpacks(
 /// Recursively scan a soundpack directory for audio and JSON files.
 ///
 /// Returns a set of relative paths (from the soundpack root) for files
-/// with extensions: .ogg, .wav, .json
+/// with extensions defined in migration_config().soundpack.content_extensions
 fn scan_soundpack_files_recursive(
     base_dir: &Path,
     current_dir: &Path,
     files: &mut HashSet<PathBuf>,
+    content_extensions: &[String],
 ) {
     let Ok(entries) = std::fs::read_dir(current_dir) else {
         return;
@@ -321,12 +335,12 @@ fn scan_soundpack_files_recursive(
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.is_dir() {
-            scan_soundpack_files_recursive(base_dir, &path, files);
+            scan_soundpack_files_recursive(base_dir, &path, files, content_extensions);
         } else if path.is_file() {
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 let ext_lower = ext.to_lowercase();
-                // Only track audio and JSON files
-                if matches!(ext_lower.as_str(), "ogg" | "wav" | "json") {
+                // Only track files with configured extensions (audio and JSON)
+                if content_extensions.iter().any(|e| e == &ext_lower) {
                     if let Ok(relative) = path.strip_prefix(base_dir) {
                         files.insert(relative.to_path_buf());
                     }
@@ -338,7 +352,7 @@ fn scan_soundpack_files_recursive(
 
 /// Scan a soundpack directory and return set of relative file paths.
 ///
-/// Only includes audio files (.ogg, .wav) and JSON files (.json).
+/// Only includes files with extensions defined in migration_config().soundpack.content_extensions
 pub fn scan_soundpack_files(soundpack_dir: &Path) -> HashSet<PathBuf> {
     let mut files = HashSet::new();
 
@@ -346,7 +360,8 @@ pub fn scan_soundpack_files(soundpack_dir: &Path) -> HashSet<PathBuf> {
         return files;
     }
 
-    scan_soundpack_files_recursive(soundpack_dir, soundpack_dir, &mut files);
+    let content_extensions = &migration_config().soundpack.content_extensions;
+    scan_soundpack_files_recursive(soundpack_dir, soundpack_dir, &mut files, content_extensions);
     files
 }
 
@@ -718,8 +733,9 @@ mod tests {
 
     #[test]
     fn test_config_skip_files_includes_debug_logs() {
-        assert!(CONFIG_SKIP_FILES.contains(&"debug.log"));
-        assert!(CONFIG_SKIP_FILES.contains(&"debug.log.prev"));
+        let skip_files = config_skip_files();
+        assert!(skip_files.iter().any(|f| f == "debug.log"));
+        assert!(skip_files.iter().any(|f| f == "debug.log.prev"));
     }
 
     #[test]

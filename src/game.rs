@@ -12,15 +12,15 @@
 //!
 //! The version detection uses a 3-tier optimization to minimize disk I/O
 //! and provide instant identification for stable releases.
+//!
+//! Game-specific configuration is loaded via `app_data::game_config()`.
 
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
+use crate::app_data::game_config;
 use crate::db::{Database, VersionInfo};
-
-/// Game executable names to look for
-const GAME_EXECUTABLES: &[&str] = &["cataclysm-tiles.exe", "cataclysm.exe"];
 
 /// Information about a detected game installation
 #[derive(Debug, Clone)]
@@ -57,8 +57,10 @@ impl GameInfo {
 /// 2. Only calculate SHA256 if VERSION.txt missing (needed for stable lookup)
 /// 3. Use cached hash when possible to avoid expensive recalculation
 pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Option<GameInfo>> {
+    let config = game_config();
+
     // Look for game executable
-    let executable = GAME_EXECUTABLES
+    let executable = config.executables.names
         .iter()
         .map(|name| directory.join(name))
         .find(|path| path.exists());
@@ -68,9 +70,9 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
     };
 
     // Fast path: Try VERSION.txt first (experimental builds always have this)
-    if let Some(version_info) = read_version_txt(directory) {
+    if let Some(version_info) = read_version_txt(directory, config) {
         // Calculate saves size
-        let saves_dir = directory.join("save");
+        let saves_dir = directory.join(&config.directories.save);
         let saves_size = if saves_dir.exists() {
             calculate_dir_size(&saves_dir).unwrap_or(0)
         } else {
@@ -102,7 +104,7 @@ pub fn detect_game_with_db(directory: &Path, db: Option<&Database>) -> Result<Op
     };
 
     // Calculate saves size
-    let saves_dir = directory.join("save");
+    let saves_dir = directory.join(&config.directories.save);
     let saves_size = if saves_dir.exists() {
         calculate_dir_size(&saves_dir).unwrap_or(0)
     } else {
@@ -156,8 +158,8 @@ fn get_or_calculate_sha256(executable: &Path, db: Option<&Database>) -> Result<S
 }
 
 /// Read version info from VERSION.txt file (fallback for experimental builds)
-fn read_version_txt(directory: &Path) -> Option<VersionInfo> {
-    let version_file = directory.join("VERSION.txt");
+fn read_version_txt(directory: &Path, config: &crate::app_data::GameConfig) -> Option<VersionInfo> {
+    let version_file = directory.join(&config.version.filename);
     if !version_file.exists() {
         return None;
     }
@@ -173,14 +175,14 @@ fn read_version_txt(directory: &Path) -> Option<VersionInfo> {
     let mut build_number: Option<String> = None;
 
     for line in content.lines() {
-        if let Some(sha) = line.strip_prefix("commit sha:") {
+        if let Some(sha) = line.strip_prefix(&config.version.commit_sha_prefix) {
             let sha = sha.trim();
-            if sha.len() >= 7 {
-                commit_sha = Some(sha[..7].to_string());
+            if sha.len() >= config.version.sha_display_length {
+                commit_sha = Some(sha[..config.version.sha_display_length].to_string());
             }
-        } else if let Some(date) = line.strip_prefix("commit date:") {
+        } else if let Some(date) = line.strip_prefix(&config.version.commit_date_prefix) {
             commit_date = Some(date.trim().to_string());
-        } else if let Some(bn) = line.strip_prefix("build number:") {
+        } else if let Some(bn) = line.strip_prefix(&config.version.build_number_prefix) {
             build_number = Some(bn.trim().to_string());
         }
     }
@@ -192,7 +194,10 @@ fn read_version_txt(directory: &Path) -> Option<VersionInfo> {
     // Extract date for display, but keep full build number for comparison
     let display_date = if let Some(ref bn) = build_number {
         // Extract just the date part (first 10 characters: YYYY-MM-DD)
-        if bn.len() >= 10 && bn.chars().nth(4) == Some('-') && bn.chars().nth(7) == Some('-') {
+        // Check if it looks like a date by verifying dash positions
+        let has_date_format = bn.len() >= config.version.min_build_number_length
+            && config.version.date_dash_positions.iter().all(|&pos| bn.chars().nth(pos) == Some('-'));
+        if has_date_format {
             Some(bn[..10].to_string())
         } else {
             commit_date.clone()
@@ -348,7 +353,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = read_version_txt(&temp_dir);
+        let config = game_config();
+        let result = read_version_txt(&temp_dir, config);
         assert!(result.is_some());
 
         let info = result.unwrap();
@@ -374,7 +380,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = read_version_txt(&temp_dir);
+        let config = game_config();
+        let result = read_version_txt(&temp_dir, config);
         assert!(result.is_some());
 
         let info = result.unwrap();
@@ -400,7 +407,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = read_version_txt(&temp_dir);
+        let config = game_config();
+        let result = read_version_txt(&temp_dir, config);
         assert!(result.is_some());
 
         let info = result.unwrap();
@@ -419,7 +427,8 @@ mod tests {
         let temp_dir = std::env::temp_dir().join("phoenix_test_no_version");
         std::fs::create_dir_all(&temp_dir).unwrap();
 
-        let result = read_version_txt(&temp_dir);
+        let config = game_config();
+        let result = read_version_txt(&temp_dir, config);
         assert!(result.is_none());
 
         // Clean up
@@ -435,7 +444,8 @@ mod tests {
         let version_file = temp_dir.join("VERSION.txt");
         std::fs::write(&version_file, "Some other content\nNo sha here\n").unwrap();
 
-        let result = read_version_txt(&temp_dir);
+        let config = game_config();
+        let result = read_version_txt(&temp_dir, config);
         assert!(result.is_none());
 
         // Clean up

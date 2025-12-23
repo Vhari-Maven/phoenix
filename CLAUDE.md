@@ -71,8 +71,9 @@ src/
 │   └── settings_tab.rs  # Settings
 ├── task.rs              # Generic task polling helper
 ├── util.rs              # Shared utilities (format_size)
+├── app_data.rs          # Compile-time embedded data (TOML/JSON configs)
 ├── backup.rs            # Backup service (create, restore, delete)
-├── config.rs            # Configuration (TOML) and data directories
+├── config.rs            # User configuration (TOML) and data directories
 ├── db.rs                # SQLite cache for version hashes
 ├── game.rs              # Game detection and launching
 ├── github.rs            # GitHub API client
@@ -97,8 +98,14 @@ phoenix/
 │       └── release.yml  # Automated release builds on version tags
 ├── assets/
 │   ├── icon.svg         # Phoenix flame icon source
-│   ├── icon.png         # Embedded window icon
-│   └── soundpacks.json  # Embedded soundpack repository
+│   └── icon.png         # Embedded window icon
+├── embedded/            # Compile-time embedded data (loaded via app_data.rs)
+│   ├── game_config.toml      # CDDA-specific paths and detection
+│   ├── launcher_config.toml  # Application settings and URLs
+│   ├── migration_config.toml # Update and migration behavior
+│   ├── release_config.toml   # GitHub release version patterns
+│   ├── stable_hashes.toml    # SHA256 hashes for stable versions
+│   └── soundpacks.json       # Soundpack repository
 ├── docs/
 │   ├── ARCHITECTURE.md  # In-depth architecture guide for developers
 │   └── TODO.md          # Bug tracking and feature ideas
