@@ -47,9 +47,11 @@ The interactive shell (`cargo run -- shell`) provides tab completion, command hi
 Releases are automated via GitHub Actions. To create a new release:
 
 ```bash
-git tag v0.2.0
+git tag -a v0.2.0 -m "Brief description of the release"
 git push origin v0.2.0
 ```
+
+Use annotated tags (`-a`) with a message (`-m`) for releases. This records who created the tag and when, and the message appears on the GitHub Releases page.
 
 This triggers the workflow which:
 1. Builds on Windows
@@ -132,8 +134,7 @@ phoenix/
 │   ├── game_config.toml      # CDDA-specific paths and detection
 │   ├── launcher_config.toml  # Application settings and URLs
 │   ├── migration_config.toml # Update and migration behavior
-│   ├── release_config.toml   # GitHub release version patterns
-│   ├── stable_hashes.toml    # SHA256 hashes for stable versions
+│   ├── stable_releases.toml  # Known stable releases with SHA256 hashes
 │   └── soundpacks.json       # Soundpack repository
 ├── docs/
 │   ├── ARCHITECTURE.md  # In-depth architecture guide for developers

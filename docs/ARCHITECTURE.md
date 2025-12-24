@@ -219,10 +219,12 @@ Phoenix uses a **decoupled state pattern** where state structs communicate back 
 ```rust
 // src/state/mod.rs
 pub enum StateEvent {
-    StatusMessage(String),  // Update the status bar
-    RefreshGameInfo,        // Re-detect the game
-    LogError(String),       // Log an error
-    LogInfo(String),        // Log info message
+    StatusMessage(String),               // Update the status bar
+    RefreshGameInfo,                     // Re-detect the game
+    LogError(String),                    // Log an error
+    LogInfo(String),                     // Log info message
+    ChangelogFetched { tag, body },      // Cache fetched changelog
+    GameVersionRefined(GameInfo),        // Update version after hash lookup
 }
 ```
 

@@ -58,6 +58,7 @@ phoenix backup delete <name>     # Delete a backup
 # Updates
 phoenix update check             # Check for available updates
 phoenix update releases          # List available releases
+phoenix update changelog <tag>   # Show changelog for a release
 phoenix update apply             # Download and install latest update
 
 # Soundpacks
