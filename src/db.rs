@@ -77,6 +77,13 @@ impl Database {
                 mtime INTEGER NOT NULL,
                 sha256 TEXT NOT NULL
             );
+
+            -- Cache for release changelogs (avoids re-fetching from GitHub)
+            CREATE TABLE IF NOT EXISTS release_changelogs (
+                tag TEXT PRIMARY KEY,
+                body TEXT NOT NULL,
+                fetched_on TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             "
         )?;
         Ok(())
@@ -158,6 +165,30 @@ impl Database {
         self.conn.execute("DELETE FROM exe_hash_cache", [])?;
         Ok(count)
     }
+
+    /// Get cached changelog for a release tag
+    pub fn get_changelog(&self, tag: &str) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT body FROM release_changelogs WHERE tag = ?"
+        )?;
+
+        let result = stmt.query_row(params![tag], |row| row.get::<_, String>(0));
+
+        match result {
+            Ok(body) => Ok(Some(body)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Store changelog for a release tag
+    pub fn store_changelog(&self, tag: &str, body: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO release_changelogs (tag, body) VALUES (?, ?)",
+            params![tag, body],
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -190,5 +221,33 @@ mod tests {
 
         let result = db.get_version("unknown_hash_that_does_not_exist").unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_changelog_cache() {
+        let conn = Connection::open_in_memory().unwrap();
+        let db = Database { conn };
+        db.init_schema().unwrap();
+
+        // Initially no changelog
+        let result = db.get_changelog("0.H-RELEASE").unwrap();
+        assert!(result.is_none());
+
+        // Store a changelog
+        let body = "Test changelog content for Herbert release.";
+        db.store_changelog("0.H-RELEASE", body).unwrap();
+
+        // Now it should be found
+        let result = db.get_changelog("0.H-RELEASE").unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), body);
+
+        // Update the changelog
+        let new_body = "Updated changelog content.";
+        db.store_changelog("0.H-RELEASE", new_body).unwrap();
+
+        // Should return updated content
+        let result = db.get_changelog("0.H-RELEASE").unwrap();
+        assert_eq!(result.unwrap(), new_body);
     }
 }

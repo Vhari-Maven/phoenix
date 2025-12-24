@@ -30,4 +30,10 @@ pub enum StateEvent {
 
     /// Log an info message
     LogInfo(String),
+
+    /// Changelog was fetched for a release (tag, body)
+    ChangelogFetched { tag: String, body: String },
+
+    /// Game version was refined via hash lookup (may indicate stable release)
+    GameVersionRefined(crate::game::GameInfo),
 }

@@ -27,6 +27,10 @@ pub struct ReleasesState {
     pub error: Option<String>,
     /// Last known rate limit info from GitHub API
     pub rate_limit: RateLimitInfo,
+    /// Async task for fetching a changelog
+    changelog_task: Option<JoinHandle<Result<(String, Option<String>)>>>,
+    /// Whether a changelog is being fetched
+    pub changelog_loading: bool,
 }
 
 impl Default for ReleasesState {
@@ -40,6 +44,8 @@ impl Default for ReleasesState {
             loading: false,
             error: None,
             rate_limit: RateLimitInfo::default(),
+            changelog_task: None,
+            changelog_loading: false,
         }
     }
 }
@@ -165,5 +171,58 @@ impl ReleasesState {
         }
 
         events
+    }
+
+    /// Start fetching a changelog for a specific release tag
+    pub fn fetch_changelog(&mut self, tag: &str, client: &GitHubClient) {
+        if self.changelog_loading {
+            return; // Already fetching
+        }
+
+        self.changelog_loading = true;
+        let client = client.clone();
+        let tag = tag.to_string();
+
+        self.changelog_task = Some(tokio::spawn(async move {
+            let (release, _rate_limit) = client.get_release_by_tag(&tag).await;
+            Ok((tag, release.and_then(|r| r.body)))
+        }));
+    }
+
+    /// Poll the changelog fetch task
+    pub fn poll_changelog(&mut self, ctx: &egui::Context) -> Vec<StateEvent> {
+        let mut events = Vec::new();
+
+        match poll_task(&mut self.changelog_task) {
+            PollResult::Complete(Ok(Ok((tag, body)))) => {
+                self.changelog_loading = false;
+                if let Some(body) = body {
+                    // Update the release in our stable list
+                    if let Some(release) = self.stable.iter_mut().find(|r| r.tag_name == tag) {
+                        release.body = Some(body.clone());
+                    }
+                    events.push(StateEvent::ChangelogFetched { tag, body });
+                }
+            }
+            PollResult::Complete(Ok(Err(e))) => {
+                self.changelog_loading = false;
+                events.push(StateEvent::LogError(format!("Failed to fetch changelog: {}", e)));
+            }
+            PollResult::Complete(Err(e)) => {
+                self.changelog_loading = false;
+                events.push(StateEvent::LogError(format!("Changelog task panicked: {}", e)));
+            }
+            PollResult::Pending => ctx.request_repaint(),
+            PollResult::NoTask => {}
+        }
+
+        events
+    }
+
+    /// Set the body of a stable release (used when loading from DB cache)
+    pub fn set_stable_release_body(&mut self, tag: &str, body: String) {
+        if let Some(release) = self.stable.iter_mut().find(|r| r.tag_name == tag) {
+            release.body = Some(body);
+        }
     }
 }

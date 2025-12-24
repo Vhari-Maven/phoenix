@@ -25,8 +25,7 @@ use std::sync::OnceLock;
 const GAME_CONFIG_TOML: &str = include_str!("../embedded/game_config.toml");
 const MIGRATION_CONFIG_TOML: &str = include_str!("../embedded/migration_config.toml");
 const LAUNCHER_CONFIG_TOML: &str = include_str!("../embedded/launcher_config.toml");
-const RELEASE_CONFIG_TOML: &str = include_str!("../embedded/release_config.toml");
-const STABLE_HASHES_TOML: &str = include_str!("../embedded/stable_hashes.toml");
+const STABLE_RELEASES_TOML: &str = include_str!("../embedded/stable_releases.toml");
 const SOUNDPACKS_JSON: &str = include_str!("../embedded/soundpacks.json");
 
 // ============================================================================
@@ -201,51 +200,63 @@ pub fn launcher_config() -> &'static LauncherConfig {
 }
 
 // ============================================================================
-// Release Configuration
+// Stable Releases
 // ============================================================================
 
-/// Release version pattern configuration
+/// Known stable release configuration
 #[derive(Debug, Deserialize)]
-pub struct ReleaseConfig {
-    pub stable: StableReleaseConfig,
+pub struct StableReleasesConfig {
+    /// Future letters to check via API
+    pub check_letters: Vec<String>,
+    /// Known stable releases
+    pub releases: Vec<EmbeddedRelease>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct StableReleaseConfig {
-    pub version_letters: Vec<String>,
-    pub max_point_release: u8,
+/// A known stable release embedded in the launcher
+#[derive(Debug, Clone, Deserialize)]
+pub struct EmbeddedRelease {
+    /// GitHub tag (e.g., "0.H-RELEASE")
+    pub tag: String,
+    /// Release name (e.g., "Herbert")
+    pub name: String,
+    /// Publication date (YYYY-MM-DD)
+    pub published: String,
+    /// Windows asset filename (if available)
+    pub asset_name: Option<String>,
+    /// Windows asset download URL (if available)
+    pub asset_url: Option<String>,
+    /// Windows asset size in bytes (if available)
+    pub asset_size: Option<u64>,
+    /// SHA256 hashes of executables for version identification
+    #[serde(default)]
+    pub hashes: Vec<String>,
 }
 
-/// Get release configuration (lazy-loaded)
-pub fn release_config() -> &'static ReleaseConfig {
-    static CONFIG: OnceLock<ReleaseConfig> = OnceLock::new();
+/// Get stable releases configuration (lazy-loaded)
+pub fn stable_releases_config() -> &'static StableReleasesConfig {
+    static CONFIG: OnceLock<StableReleasesConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
-        toml::from_str(RELEASE_CONFIG_TOML).unwrap_or_else(|e| {
-            panic!("Failed to parse release_config.toml: {}", e);
+        toml::from_str(STABLE_RELEASES_TOML).unwrap_or_else(|e| {
+            panic!("Failed to parse stable_releases.toml: {}", e);
         })
     })
-}
-
-// ============================================================================
-// Stable Version Hashes
-// ============================================================================
-
-/// Parsed structure for stable_hashes.toml
-#[derive(Deserialize)]
-struct StableHashesConfig {
-    hashes: HashMap<String, String>,
 }
 
 /// Get stable version SHA256 hashes (lazy-loaded)
 ///
 /// Maps executable SHA256 hashes to version strings (e.g., "0.F-3").
-/// Used for instant identification of known stable releases.
+/// Built from stable_releases_config() for instant identification of known stable releases.
 pub fn stable_versions() -> &'static HashMap<String, String> {
     static HASHES: OnceLock<HashMap<String, String>> = OnceLock::new();
     HASHES.get_or_init(|| {
-        toml::from_str::<StableHashesConfig>(STABLE_HASHES_TOML)
-            .unwrap_or_else(|e| panic!("Failed to parse stable_hashes.toml: {}", e))
-            .hashes
+        let config = stable_releases_config();
+        let mut map = HashMap::new();
+        for release in &config.releases {
+            for hash in &release.hashes {
+                map.insert(hash.clone(), release.tag.clone());
+            }
+        }
+        map
     })
 }
 

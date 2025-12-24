@@ -1,0 +1,125 @@
+# Known CDDA Stable Releases
+# This file is updated with each launcher release to include known stable versions.
+# The launcher will check for newer releases (next letters) via API.
+# Hashes are SHA256 of the executable for instant version identification.
+
+# Future letters to check via API (ones that might be released)
+check_letters = ["I", "J"]
+
+[[releases]]
+tag = "0.H-RELEASE"
+name = "Herbert"
+published = "2024-11-23"
+asset_name = "cdda-windows-with-graphics-and-sounds-x64-2024-11-23-1857.zip"
+asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.H-RELEASE/cdda-windows-with-graphics-and-sounds-x64-2024-11-23-1857.zip"
+asset_size = 296446704
+hashes = [
+    "d8707cc1a657287f9c3071c3444c1eff18cceddcf3f3176f97cd4448a207414e",  # with-graphics-and-sounds
+    "26d550598827e60025946dd9bc1042a1b1bec086a96ba5a26e9bbc12f3932dfc",  # with-graphics (no sounds)
+]
+
+[[releases]]
+tag = "0.G"
+name = "Gaiman"
+published = "2023-03-01"
+asset_name = "cdda-windows-tiles-sounds-x64-2023-03-01-0054.zip"
+asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.G/cdda-windows-tiles-sounds-x64-2023-03-01-0054.zip"
+asset_size = 298115201
+hashes = [
+    "0b980ed6420c3b5a4206b3c1397f30a3a22d6c1ac54d2146ccdea29ba85ee9d0",  # tiles-sounds
+]
+
+[[releases]]
+tag = "0.F-3"
+name = "Frank-3"
+published = "2021-10-02"
+asset_name = "cataclysmdda-0.F-3-Windows_x64-Tiles-Sound-13603.zip"
+asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.F-3/cataclysmdda-0.F-3-Windows_x64-Tiles-Sound-13603.zip"
+asset_size = 69636096
+hashes = [
+    "3e0b15543015389c34ad679a931186a1264dbccb010b813f63b6caef2d158dc8",
+    "59404eeb88539b20c9ffbbcbe86a7e5c20267375975306245862c7fb731a5973",
+]
+
+[[releases]]
+tag = "0.F-2"
+name = "Frank-2"
+published = "2021-08-31"
+hashes = [
+    "5da7ebd7ab07ebf755e445440210309eda0ae8f5924026d401b9eb5c52c5b6e7",
+    "6870353e6d142735dfd21dec1eaf6b39af088daf5eef27b02e53ebb1c9eca684",
+]
+
+[[releases]]
+tag = "0.F-1"
+name = "Frank-1"
+published = "2021-07-03"
+hashes = [
+    "960140f7926267b56ef6933670b7a73d00087bd53149e9e63c48a8631cfbed53",
+    "c87f226d8b4e6543fbc8527d645cf4342b5e1036e94e16920381d7e5b5b9e34f",
+]
+
+[[releases]]
+tag = "0.F"
+name = "Frank"
+published = "2021-07-03"
+hashes = [
+    "1f5beb8b3dcb5ca1f704b816864771e2dd8ff38ca435a4abdb9a59e4bb95d099",
+    "2794df225787174c6f5d8557d63f434a46a82f562c0395294901fb5d5d10d564",
+]
+
+[[releases]]
+tag = "0.E-3"
+name = "Ellison-3"
+published = "2020-12-09"
+asset_name = "cataclysmdda-0.E-3-Windows_x64-Tiles-10478.zip"
+asset_url = "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/0.E-3/cataclysmdda-0.E-3-Windows_x64-Tiles-10478.zip"
+asset_size = 47972352
+hashes = [
+    "563bd13cff18c4271c43c18568237046d1fd18ae200f7e5cdd969b80e6992967",
+    "e4874bbb8e0a7b1e52b4dedb99575e2a90bfe84e74c36db58510f9973400077d",
+]
+
+[[releases]]
+tag = "0.E-2"
+name = "Ellison-2"
+published = "2020-05-20"
+hashes = [
+    "0ce61cdfc299661382e30da133f7356b4faea38865ec0947139a08f40b595728",
+    "c9ca51bd1e7549b0820fe736c10b3e73d358700c3460a0227fade59e9754e03d",
+]
+
+[[releases]]
+tag = "0.E-1"
+name = "Ellison-1"
+published = "2020-04-17"
+hashes = [
+    "fb7db2b3cf101e19565ce515c012a089a75f54da541cd458144dc8483b5e59c8",
+    "1068867549c1a24ae241a886907651508830ccd9c091bad27bacbefabab99acc",
+]
+
+[[releases]]
+tag = "0.E"
+name = "Ellison"
+published = "2020-04-01"
+hashes = [
+    "bdd4f539767fd970beeab271e0e3774ba3022faeff88c6186b389e6bbe84bc75",
+    "8adea7b3bc81fa9e4594b19553faeb591846295f47b67110dbd16eed8b37e62b",
+]
+
+[[releases]]
+tag = "0.D"
+name = "Danny"
+published = "2019-03-08"
+hashes = [
+    "0454ed2bbc4a6c1c8cca5c360533513eb2a1d975816816d7c13ff60e276d431b",
+    "7f914145248cebfd4d1a6d4b1ff932a478504b1e7e4c689aab97b8700e079f61",
+]
+
+[[releases]]
+tag = "0.C"
+name = "Cooper"
+published = "2015-03-09"
+hashes = [
+    "2d7bbf426572e2b21aede324c8d89c9ad84529a05a4ac99a914f22b2b1e1405e",
+]

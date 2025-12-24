@@ -14,12 +14,12 @@
 //!
 //! Rate limiting is tracked and exposed via `RateLimitInfo` for UI display.
 //!
-//! Configuration loaded via `app_data::launcher_config()` and `app_data::release_config()`.
+//! Configuration loaded via `app_data::launcher_config()` and `app_data::stable_releases_config()`.
 
 use anyhow::Result;
 use serde::Deserialize;
 
-use crate::app_data::{launcher_config, release_config};
+use crate::app_data::{launcher_config, stable_releases_config};
 
 /// User agent for API requests
 const USER_AGENT: &str = concat!("Phoenix-Launcher/", env!("CARGO_PKG_VERSION"));
@@ -117,7 +117,7 @@ impl GitHubClient {
 
     /// Fetch a release by tag name (returns None if tag doesn't exist)
     /// Also returns rate limit info from the response
-    async fn get_release_by_tag(&self, tag: &str) -> (Option<Release>, RateLimitInfo) {
+    pub async fn get_release_by_tag(&self, tag: &str) -> (Option<Release>, RateLimitInfo) {
         let github = &launcher_config().github;
         let url = format!(
             "{}/repos/{}/releases/tags/{}",
@@ -132,86 +132,89 @@ impl GitHubClient {
             .await
         {
             Ok(r) => r,
-            Err(_) => return (None, RateLimitInfo::default()),
+            Err(e) => {
+                tracing::debug!("Request failed for tag {}: {}", tag, e);
+                return (None, RateLimitInfo::default());
+            }
         };
 
         let rate_limit = RateLimitInfo::from_response(&response);
+        let status = response.status();
 
-        if !response.status().is_success() {
+        if !status.is_success() {
+            if status.as_u16() != 404 {
+                tracing::debug!("Tag {} returned status {}", tag, status);
+            }
             return (None, rate_limit);
         }
 
         match response.json().await {
-            Ok(release) => (Some(release), rate_limit),
-            Err(_) => (None, rate_limit),
-        }
-    }
-
-    /// Generate candidate stable tags to try
-    /// Returns tags in priority order (latest point release first for each version)
-    fn generate_stable_tag_candidates() -> Vec<String> {
-        let config = release_config();
-        let mut candidates = Vec::new();
-
-        for letter in &config.stable.version_letters {
-            // Try point releases first (highest to lowest), then base version
-            for point in (0..=config.stable.max_point_release).rev() {
-                if point == 0 {
-                    candidates.push(format!("0.{}", letter));
-                } else {
-                    candidates.push(format!("0.{}-{}", letter, point));
-                }
+            Ok(release) => {
+                tracing::debug!("Found release for tag {}", tag);
+                (Some(release), rate_limit)
+            }
+            Err(e) => {
+                tracing::debug!("Failed to parse release for tag {}: {}", tag, e);
+                (None, rate_limit)
             }
         }
-
-        candidates
     }
 
-    /// Fetch stable releases by trying known tag patterns directly.
+    /// Fetch stable releases using embedded data plus API check for new releases.
     ///
-    /// CDDA stable releases follow a predictable naming pattern: `0.C`, `0.D`, ..., `0.G`,
-    /// with optional point releases like `0.F-1`, `0.F-2`, etc.
+    /// This approach:
+    /// 1. Loads known stable releases from embedded stable_releases.toml (instant, no API)
+    /// 2. Checks for any new releases via API (only 1-2 requests for future letters)
+    /// 3. Returns combined results sorted by version letter descending
     ///
-    /// Instead of fetching all 1000+ tags and filtering, this function:
-    /// 1. Generates candidate tag names (`0.C` through `0.Z`, plus `-1` through `-10` variants)
-    /// 2. Fetches all candidates in parallel (most will 404)
-    /// 3. Keeps only the latest release per version letter (e.g., `0.F-3` over `0.F-2`)
-    /// 4. Returns releases sorted by version letter descending (newest first)
-    ///
-    /// This approach is ~10x faster than pagination and uses fewer API requests.
+    /// This avoids rate limiting issues and provides instant results for known releases.
     pub async fn get_stable_releases(&self) -> Result<FetchResult<Vec<Release>>> {
         let start = std::time::Instant::now();
+        let config = stable_releases_config();
 
-        // Generate all candidate tags and fetch them in parallel
-        let candidates = Self::generate_stable_tag_candidates();
-
-        let futures: Vec<_> = candidates
-            .iter()
-            .map(|tag| self.get_release_by_tag(tag))
-            .collect();
-
-        let results = futures::future::join_all(futures).await;
-
-        // Collect successful releases, keeping only the latest per version letter
-        let mut releases_by_letter: std::collections::HashMap<char, Release> =
-            std::collections::HashMap::new();
+        let mut releases: Vec<Release> = Vec::new();
         let mut last_rate_limit = RateLimitInfo::default();
 
-        for (release, rate_limit) in results {
-            last_rate_limit = rate_limit;
-            if let Some(r) = release {
-                // Extract version letter from tag
-                let tag = r.tag_name.strip_prefix("cdda-").unwrap_or(&r.tag_name);
-                if let Some(letter) = tag.chars().nth(2) {
-                    // Only keep the first (latest) release for each letter
-                    releases_by_letter.entry(letter).or_insert(r);
-                }
+        // Convert embedded releases to Release structs
+        for embedded in &config.releases {
+            // Only include releases that have Windows assets
+            if let (Some(asset_name), Some(asset_url), Some(asset_size)) =
+                (&embedded.asset_name, &embedded.asset_url, embedded.asset_size)
+            {
+                releases.push(Release {
+                    tag_name: embedded.tag.clone(),
+                    name: embedded.name.clone(),
+                    body: None,
+                    published_at: format!("{}T00:00:00Z", embedded.published),
+                    assets: vec![ReleaseAsset {
+                        name: asset_name.clone(),
+                        size: asset_size,
+                        browser_download_url: asset_url.clone(),
+                    }],
+                });
             }
         }
 
-        // Convert to sorted vec (by letter descending)
-        let mut stable: Vec<Release> = releases_by_letter.into_values().collect();
-        stable.sort_by(|a, b| {
+        tracing::debug!(
+            "Loaded {} embedded stable releases",
+            releases.len()
+        );
+
+        // Check for new releases (future letters) via API
+        for letter in &config.check_letters {
+            // Try -RELEASE format first (used for 0.H+)
+            let tag = format!("0.{}-RELEASE", letter);
+            let (release, rate_limit) = self.get_release_by_tag(&tag).await;
+            last_rate_limit = rate_limit;
+
+            if let Some(r) = release {
+                tracing::info!("Found new stable release: {}", r.tag_name);
+                releases.push(r);
+            }
+        }
+
+        // Sort by version letter descending (newest first)
+        releases.sort_by(|a, b| {
             let get_letter = |tag: &str| -> char {
                 let tag = tag.strip_prefix("cdda-").unwrap_or(tag);
                 tag.chars().nth(2).unwrap_or('A')
@@ -220,11 +223,27 @@ impl GitHubClient {
         });
 
         tracing::info!(
-            "Fetched {} stable releases in {:.1}s",
-            stable.len(),
+            "Loaded {} stable releases in {:.1}s",
+            releases.len(),
             start.elapsed().as_secs_f32()
         );
-        Ok(FetchResult { data: stable, rate_limit: last_rate_limit })
+        Ok(FetchResult { data: releases, rate_limit: last_rate_limit })
+    }
+
+    /// Fetch releases by specific tag names (for debugging/testing)
+    pub async fn get_releases_by_tags(&self, tags: &[&str]) -> Result<FetchResult<Vec<Release>>> {
+        let mut releases = Vec::new();
+        let mut last_rate_limit = RateLimitInfo::default();
+
+        for tag in tags {
+            let (release, rate_limit) = self.get_release_by_tag(tag).await;
+            last_rate_limit = rate_limit;
+            if let Some(r) = release {
+                releases.push(r);
+            }
+        }
+
+        Ok(FetchResult { data: releases, rate_limit: last_rate_limit })
     }
 
     /// Fetch experimental releases (recent builds from releases list)

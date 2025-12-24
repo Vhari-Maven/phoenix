@@ -29,6 +29,20 @@ pub enum UpdateCommands {
         /// Filter by branch (stable or experimental)
         #[arg(long)]
         branch: Option<String>,
+
+        /// Fetch specific tags (comma-separated, e.g. "0.H-RELEASE,0.G")
+        #[arg(long)]
+        tags: Option<String>,
+    },
+
+    /// Show changelog for a specific release
+    Changelog {
+        /// Release tag (e.g., "0.H-RELEASE")
+        tag: String,
+
+        /// Skip database cache and fetch fresh from GitHub
+        #[arg(long)]
+        no_cache: bool,
     },
 
     /// Download an update (without installing)
@@ -84,7 +98,8 @@ struct ReleasesResult {
 pub async fn run(command: UpdateCommands, format: OutputFormat, quiet: bool) -> Result<()> {
     match command {
         UpdateCommands::Check => check(format).await,
-        UpdateCommands::Releases { limit, branch } => releases(limit, branch, format).await,
+        UpdateCommands::Releases { limit, branch, tags } => releases(limit, branch, tags, format).await,
+        UpdateCommands::Changelog { tag, no_cache } => changelog(tag, no_cache, format, quiet).await,
         UpdateCommands::Download { version } => download(version, format, quiet).await,
         UpdateCommands::Install => install(format, quiet).await,
         UpdateCommands::Apply { keep_saves, remove_old, dry_run } => {
@@ -154,13 +169,17 @@ async fn check(format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-async fn releases(limit: usize, branch: Option<String>, format: OutputFormat) -> Result<()> {
+async fn releases(limit: usize, branch: Option<String>, tags: Option<String>, format: OutputFormat) -> Result<()> {
     let config = Config::load()?;
     let branch = branch.unwrap_or_else(|| config.game.branch.clone());
 
     let client = GitHubClient::new()?;
 
-    let releases = if branch == "stable" {
+    let releases = if let Some(tags_str) = tags {
+        // Fetch specific tags directly
+        let tag_list: Vec<&str> = tags_str.split(',').map(|s| s.trim()).collect();
+        client.get_releases_by_tags(&tag_list).await?.data
+    } else if branch == "stable" {
         client.get_stable_releases().await?.data
     } else {
         client.get_experimental_releases().await?.data
@@ -212,6 +231,72 @@ async fn releases(limit: usize, branch: Option<String>, format: OutputFormat) ->
         }
 
         lines.join("\n")
+    });
+
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct ChangelogResult {
+    tag: String,
+    source: String, // "cache" or "api"
+    body: Option<String>,
+}
+
+async fn changelog(tag: String, no_cache: bool, format: OutputFormat, quiet: bool) -> Result<()> {
+    let db = Database::open().ok();
+    let mut source = "api";
+    let mut body: Option<String> = None;
+
+    // Check DB cache first (unless --no-cache)
+    if !no_cache {
+        if let Some(ref db) = db {
+            if let Ok(Some(cached_body)) = db.get_changelog(&tag) {
+                if !quiet {
+                    eprintln!("Found changelog in cache");
+                }
+                source = "cache";
+                body = Some(cached_body);
+            }
+        }
+    }
+
+    // Fetch from GitHub API if not in cache
+    if body.is_none() {
+        if !quiet {
+            eprintln!("Fetching changelog from GitHub API...");
+        }
+        let client = GitHubClient::new()?;
+        let (release, _rate_limit) = client.get_release_by_tag(&tag).await;
+
+        if let Some(release) = release {
+            body = release.body;
+
+            // Cache in database
+            if let (Some(db), Some(changelog_body)) = (&db, &body) {
+                if let Err(e) = db.store_changelog(&tag, changelog_body) {
+                    eprintln!("Warning: Failed to cache changelog: {}", e);
+                } else if !quiet {
+                    eprintln!("Cached changelog in database");
+                }
+            }
+        }
+    }
+
+    let result = ChangelogResult {
+        tag: tag.clone(),
+        source: source.to_string(),
+        body: body.clone(),
+    };
+
+    print_formatted(&result, format, |r| {
+        match &r.body {
+            Some(text) => format!(
+                "Changelog for {} (from {}):\n\n{}",
+                r.tag, r.source, text
+            ),
+            None => format!("No changelog found for {}", r.tag),
+        }
     });
 
     Ok(())
