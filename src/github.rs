@@ -14,7 +14,7 @@
 //!
 //! Rate limiting is tracked and exposed via `RateLimitInfo` for UI display.
 //!
-//! Configuration loaded via `app_data::launcher_config()` and `app_data::release_config()`.
+//! Configuration loaded via `app_data::launcher_config()` and `app_data::stable_releases_config()`.
 
 use anyhow::Result;
 use serde::Deserialize;
