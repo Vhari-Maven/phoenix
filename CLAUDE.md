@@ -32,6 +32,7 @@ Running with no arguments opens the GUI. Any subcommand runs in CLI mode:
 ```bash
 cargo run -- diag check              # Verify installation health
 cargo run -- game detect             # Detect game version
+cargo run -- game export             # Export user data for external builds
 cargo run -- config show             # Show current configuration
 cargo run -- backup list --json      # List backups as JSON
 cargo run -- update check            # Check for updates

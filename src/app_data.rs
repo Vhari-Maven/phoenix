@@ -102,6 +102,7 @@ pub struct MigrationConfig {
     pub archive: ArchiveConfig,
     pub soundpack: SoundpackMigrationConfig,
     pub download: DownloadConfig,
+    pub export: ExportConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +130,11 @@ pub struct DownloadConfig {
     pub progress_interval_ms: u64,
     pub extraction_batch_size: usize,
     pub soundpack_extraction_batch: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExportConfig {
+    pub directories: Vec<String>,
 }
 
 /// Get migration configuration (lazy-loaded)
