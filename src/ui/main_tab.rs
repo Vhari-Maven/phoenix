@@ -158,6 +158,9 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
         // If branch changed, update selection and fetch if needed
         if app.config.game.branch != previous_branch {
+            // Save the branch preference
+            app.save_config();
+
             if !app.has_releases_for_branch(&app.config.game.branch) {
                 app.releases.selected_idx = None;
                 let branch = app.config.game.branch.clone();

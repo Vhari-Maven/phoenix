@@ -99,6 +99,10 @@ impl UpdateState {
 
         // Spawn the update task
         self.task = Some(tokio::spawn(async move {
+            // Pre-flight check: verify we have write access before doing any work
+            // This prevents wasting time on backup/download if the game is running
+            update::check_installation_access(&game_dir).await?;
+
             // Phase 0: Auto-backup before update (if enabled)
             if backup_before_update {
                 tracing::info!("Creating pre-update backup...");
@@ -186,16 +190,14 @@ impl UpdateState {
                 self.progress.phase = UpdatePhase::Failed;
                 let msg = e.to_string();
                 events.push(StateEvent::LogError(format!("Update failed: {}", msg)));
-                self.error = Some(msg.clone());
-                events.push(StateEvent::StatusMessage(format!("Update failed: {}", msg)));
+                self.error = Some(msg);
             }
             PollResult::Complete(Err(e)) => {
                 self.progress_rx = None;
                 self.progress.phase = UpdatePhase::Failed;
                 let msg = format!("Update task panicked: {}", e);
                 events.push(StateEvent::LogError(msg.clone()));
-                self.error = Some(msg.clone());
-                events.push(StateEvent::StatusMessage(msg));
+                self.error = Some(msg);
             }
             PollResult::Pending => ctx.request_repaint(),
             PollResult::NoTask => {}
