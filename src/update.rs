@@ -193,6 +193,9 @@ pub async fn download_asset(
 }
 
 /// Perform the full update process: backup, extract, restore.
+///
+/// If extraction or restore fails after archiving, automatically rolls back
+/// to the previous installation.
 pub async fn install_update(
     zip_path: PathBuf,
     game_dir: PathBuf,
@@ -203,6 +206,9 @@ pub async fn install_update(
     let update_start = Instant::now();
     let archive_dir = game_dir.join(&migration_config().archive.directory);
     let old_archive_dir = game_dir.join(&migration_config().archive.directory_old);
+
+    // Pre-flight check: verify we have write access before making any changes
+    check_installation_access(&game_dir).await?;
 
     // Phase 1: Archive current installation (fast - uses rename, defers deletion)
     let _ = progress_tx.send(UpdateProgress {
@@ -215,26 +221,67 @@ pub async fn install_update(
     tracing::info!("Archive complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
     // Phase 2: Extract new version
+    // If this fails, we need to rollback
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::Extracting,
         ..Default::default()
     });
 
     let phase_start = Instant::now();
-    let total_files = extract_zip(&zip_path, &game_dir, progress_tx.clone()).await?;
+    let extract_result = extract_zip(&zip_path, &game_dir, progress_tx.clone()).await;
+
+    let total_files = match extract_result {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Extraction failed, rolling back: {}", e);
+            if let Err(rollback_err) = rollback_from_archive(&game_dir, &archive_dir).await {
+                tracing::error!("Rollback also failed: {}", rollback_err);
+                anyhow::bail!(
+                    "Update failed during extraction AND rollback failed.\n\n\
+                     Extraction error: {}\n\
+                     Rollback error: {}\n\n\
+                     Your installation may be corrupted. Please reinstall the game.",
+                    e, rollback_err
+                );
+            }
+            anyhow::bail!(
+                "Update failed during extraction. Previous version has been restored.\n\nError: {}",
+                e
+            );
+        }
+    };
     tracing::info!("Extracted {} files in {:.1}s", total_files, phase_start.elapsed().as_secs_f32());
 
     // Verify extraction succeeded
     verify_extraction(&game_dir).await;
 
     // Phase 3: Smart restore user data
+    // If this fails, we also need to rollback
     let _ = progress_tx.send(UpdateProgress {
         phase: UpdatePhase::Restoring,
         ..Default::default()
     });
 
     let phase_start = Instant::now();
-    restore_user_directories_smart(&archive_dir, &game_dir, prevent_save_move).await?;
+    let restore_result = restore_user_directories_smart(&archive_dir, &game_dir, prevent_save_move).await;
+
+    if let Err(e) = restore_result {
+        tracing::error!("Restore failed, rolling back: {}", e);
+        if let Err(rollback_err) = rollback_from_archive(&game_dir, &archive_dir).await {
+            tracing::error!("Rollback also failed: {}", rollback_err);
+            anyhow::bail!(
+                "Update failed during restore AND rollback failed.\n\n\
+                 Restore error: {}\n\
+                 Rollback error: {}\n\n\
+                 Your installation may be corrupted. Please reinstall the game.",
+                e, rollback_err
+            );
+        }
+        anyhow::bail!(
+            "Update failed during restore. Previous version has been restored.\n\nError: {}",
+            e
+        );
+    }
     tracing::info!("Restore complete in {:.1}s", phase_start.elapsed().as_secs_f32());
 
     // Phase 4: Cleanup
@@ -772,6 +819,128 @@ pub fn download_dir() -> Result<PathBuf> {
     std::fs::create_dir_all(&download_dir)?;
 
     Ok(download_dir)
+}
+
+/// Check if we have write access to the game installation before updating.
+///
+/// This prevents update failures when:
+/// - The game is running
+/// - Files are open in another program (e.g., JSON file open in editor)
+/// - Antivirus is scanning files
+///
+/// Returns Ok(()) if we can proceed, or an error explaining why not.
+pub async fn check_installation_access(game_dir: &Path) -> Result<()> {
+    // Check if game executables can be renamed (indicates they're not in use)
+    for exe_name in &game_config().executables.names {
+        let exe_path = game_dir.join(exe_name);
+        if exe_path.exists() {
+            // Try to open with exclusive write access
+            // On Windows, this fails if the file is running or locked
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .open(&exe_path)
+            {
+                Ok(_) => {
+                    // File opened successfully, we have access
+                    tracing::debug!("Access check passed for {}", exe_name);
+                }
+                Err(e) => {
+                    // Common Windows error codes:
+                    // - 32: ERROR_SHARING_VIOLATION (file in use)
+                    // - 5: ERROR_ACCESS_DENIED
+                    let hint = if e.raw_os_error() == Some(32) {
+                        "The game appears to be running. Please close it before updating."
+                    } else if e.raw_os_error() == Some(5) {
+                        "Access denied. Try running the launcher as administrator, or check if antivirus is blocking access."
+                    } else {
+                        "The file may be in use by another program."
+                    };
+                    anyhow::bail!(
+                        "Cannot update: {} is locked.\n\n{}\n\nError: {}",
+                        exe_name,
+                        hint,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // Quick check that we can write to the game directory
+    let test_file = game_dir.join(".phoenix_write_test");
+    match tokio::fs::write(&test_file, b"test").await {
+        Ok(_) => {
+            let _ = tokio::fs::remove_file(&test_file).await;
+        }
+        Err(e) => {
+            anyhow::bail!(
+                "Cannot write to game directory.\n\nPlease check folder permissions.\n\nError: {}",
+                e
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Rollback to the previous installation from archive.
+///
+/// Called when an update fails after archiving but before completion.
+/// Moves all files from .phoenix_archive back to the game directory.
+async fn rollback_from_archive(game_dir: &Path, archive_dir: &Path) -> Result<()> {
+    tracing::warn!("Rolling back to previous installation from archive...");
+
+    // First, clear any partially extracted files from game_dir
+    // (except the archive directories themselves)
+    let config = migration_config();
+    let mut entries = tokio::fs::read_dir(game_dir)
+        .await
+        .context("Failed to read game directory during rollback")?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        // Keep archive directories
+        if name_str == config.archive.directory || name_str == config.archive.directory_old {
+            continue;
+        }
+
+        // Remove everything else (partial extraction)
+        let path = entry.path();
+        if path.is_dir() {
+            if let Err(e) = tokio::fs::remove_dir_all(&path).await {
+                tracing::warn!("Failed to remove {} during rollback: {}", path.display(), e);
+            }
+        } else if let Err(e) = tokio::fs::remove_file(&path).await {
+            tracing::warn!("Failed to remove {} during rollback: {}", path.display(), e);
+        }
+    }
+
+    // Now move everything from archive back to game directory
+    let mut archive_entries = tokio::fs::read_dir(archive_dir)
+        .await
+        .context("Failed to read archive directory during rollback")?;
+
+    let mut items_restored = 0u32;
+    while let Some(entry) = archive_entries.next_entry().await? {
+        let name = entry.file_name();
+        let src = entry.path();
+        let dst = game_dir.join(&name);
+
+        tokio::fs::rename(&src, &dst)
+            .await
+            .with_context(|| format!("Failed to restore {:?} from archive", src))?;
+        items_restored += 1;
+    }
+
+    // Remove the now-empty archive directory
+    if let Err(e) = tokio::fs::remove_dir(archive_dir).await {
+        tracing::warn!("Failed to remove empty archive directory: {}", e);
+    }
+
+    tracing::info!("Rollback complete: restored {} items", items_restored);
+    Ok(())
 }
 
 #[cfg(test)]
