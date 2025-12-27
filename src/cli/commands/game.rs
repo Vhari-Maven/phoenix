@@ -1,12 +1,18 @@
 //! Game detection and launching commands
 
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
 use serde::Serialize;
+use walkdir::WalkDir;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
-use crate::cli::output::{print_error, print_formatted, print_success, OutputFormat};
+use crate::app_data::migration_config;
+use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game::{self, GameInfo};
@@ -34,6 +40,17 @@ pub enum GameCommands {
         #[arg(long)]
         dir: Option<PathBuf>,
     },
+
+    /// Export user data (saves, config, mods, etc.) for use with external builds
+    Export {
+        /// Output file path (defaults to Phoenix data directory)
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+
+        /// Compression level (0-9, default 6)
+        #[arg(long, default_value = "6")]
+        compression: u8,
+    },
 }
 
 /// JSON-serializable game detection result
@@ -54,6 +71,7 @@ pub async fn run(command: GameCommands, format: OutputFormat, quiet: bool) -> Re
         GameCommands::Detect { dir } => detect(dir, format, quiet).await,
         GameCommands::Launch { params } => launch(params, quiet).await,
         GameCommands::Info { dir } => info(dir, format, quiet).await,
+        GameCommands::Export { output, compression } => export(output, compression, format, quiet).await,
     }
 }
 
@@ -264,4 +282,182 @@ fn format_info_text(result: &GameInfoResult) -> String {
     }
 
     lines.join("\n")
+}
+
+#[derive(Serialize)]
+struct ExportResult {
+    output_path: String,
+    compressed_size_bytes: u64,
+    uncompressed_size_bytes: u64,
+    file_count: usize,
+    directories_exported: Vec<String>,
+}
+
+async fn export(
+    output: Option<PathBuf>,
+    compression: u8,
+    format: OutputFormat,
+    quiet: bool,
+) -> Result<()> {
+    let config = Config::load()?;
+    let game_dir = config
+        .game
+        .directory
+        .as_ref()
+        .map(PathBuf::from)
+        .context("No game directory configured. Set it in Phoenix settings first.")?;
+
+    // Determine output path
+    let output_path = match output {
+        Some(p) => p,
+        None => {
+            let data_dir = Config::data_dir()?;
+            data_dir.join("export.zip")
+        }
+    };
+
+    // Collect directories that exist
+    let export_dirs = &migration_config().export.directories;
+    let mut dirs_to_export: Vec<(String, PathBuf)> = Vec::new();
+    for dir_name in export_dirs {
+        let dir_path = game_dir.join(dir_name);
+        if dir_path.exists() && dir_path.is_dir() {
+            dirs_to_export.push((dir_name.clone(), dir_path));
+        }
+    }
+
+    if dirs_to_export.is_empty() {
+        print_error("No exportable directories found in game directory");
+        return Err(anyhow::anyhow!("Nothing to export"));
+    }
+
+    let show_progress = should_show_progress(quiet, format);
+    let game_dir_clone = game_dir.clone();
+    let output_path_clone = output_path.clone();
+    let dirs_exported: Vec<String> = dirs_to_export.iter().map(|(name, _)| name.clone()).collect();
+
+    // Run export in blocking task
+    let (file_count, compressed_size, uncompressed_size) = tokio::task::spawn_blocking(move || {
+        export_sync(
+            &game_dir_clone,
+            &output_path_clone,
+            &dirs_to_export,
+            compression,
+            show_progress,
+        )
+    })
+    .await??;
+
+    let result = ExportResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        compressed_size_bytes: compressed_size,
+        uncompressed_size_bytes: uncompressed_size,
+        file_count,
+        directories_exported: dirs_exported,
+    };
+
+    print_formatted(&result, format, |r| {
+        let mut lines = vec![
+            format!("Exported to: {}", r.output_path),
+            format!(
+                "Size: {} ({} uncompressed)",
+                format_size(r.compressed_size_bytes),
+                format_size(r.uncompressed_size_bytes)
+            ),
+            format!("Files: {}", r.file_count),
+            format!("Directories: {}", r.directories_exported.join(", ")),
+        ];
+        lines.push(String::new());
+        lines.push("Extract this zip into your CDDA build directory to use your saves and settings.".to_string());
+        lines.join("\n")
+    });
+
+    Ok(())
+}
+
+fn export_sync(
+    game_dir: &Path,
+    output_path: &Path,
+    dirs_to_export: &[(String, PathBuf)],
+    compression_level: u8,
+    show_progress: bool,
+) -> Result<(usize, u64, u64)> {
+    // Collect all files to export
+    let mut files_to_export: Vec<(PathBuf, String)> = Vec::new();
+
+    for (_dir_name, dir_path) in dirs_to_export {
+        for entry in WalkDir::new(dir_path).into_iter().filter_map(|e| e.ok()) {
+            if entry.file_type().is_file() {
+                let path = entry.path().to_path_buf();
+                // Create relative path from game_dir so extraction preserves structure
+                let relative = path
+                    .strip_prefix(game_dir)
+                    .unwrap_or(&path);
+                let relative_str = relative.to_string_lossy().replace('\\', "/");
+
+                // Skip debug logs
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if filename == "debug.log" || filename == "debug.log.prev" {
+                    continue;
+                }
+
+                files_to_export.push((path, relative_str));
+            }
+        }
+    }
+
+    let total_files = files_to_export.len();
+
+    if total_files == 0 {
+        return Err(anyhow::anyhow!("No files to export"));
+    }
+
+    // Create parent directory if needed
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    // Create ZIP file
+    let file = File::create(output_path)?;
+    let mut zip = ZipWriter::new(file);
+
+    let compression = if compression_level == 0 {
+        CompressionMethod::Stored
+    } else {
+        CompressionMethod::Deflated
+    };
+
+    let options = SimpleFileOptions::default()
+        .compression_method(compression)
+        .compression_level(Some(compression_level.min(9) as i64));
+
+    let mut uncompressed_size: u64 = 0;
+
+    for (i, (path, relative)) in files_to_export.iter().enumerate() {
+        if show_progress {
+            eprint!("\rExporting: {}/{}   ", i + 1, total_files);
+        }
+
+        // Read file content
+        let mut file_content = Vec::new();
+        let mut file = File::open(path)?;
+        file.read_to_end(&mut file_content)?;
+
+        uncompressed_size += file_content.len() as u64;
+
+        // Add to ZIP
+        zip.start_file(relative, options)?;
+        zip.write_all(&file_content)?;
+    }
+
+    zip.finish()?;
+
+    if show_progress {
+        eprintln!(); // Clear progress line
+    }
+
+    // Get compressed size
+    let compressed_size = std::fs::metadata(output_path)?.len();
+
+    Ok((total_files, compressed_size, uncompressed_size))
 }

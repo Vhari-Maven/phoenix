@@ -38,3 +38,18 @@ extraction_batch_size = 100
 
 # Batch size for soundpack extraction progress
 soundpack_extraction_batch = 50
+
+[export]
+# Directories to include when exporting user data for external builds
+# These paths are relative to the game directory
+# Note: Soundpacks (data/sound) and mods (data/mods) are excluded as they
+# are large and easily re-downloaded
+directories = [
+    "save",       # Save games, worlds, characters
+    "templates",  # Character templates
+    "memorial",   # Death records
+    "graveyard",  # Dead characters
+    "config",     # Game settings, keybindings
+    "font",       # Custom fonts (root)
+    "data/font",  # Custom fonts (data)
+]
