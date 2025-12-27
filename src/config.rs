@@ -49,9 +49,6 @@ pub struct LauncherConfig {
     /// Keep launcher open after game closes
     #[serde(default)]
     pub keep_open: bool,
-    /// UI language code
-    #[serde(default = "default_locale")]
-    pub locale: String,
 }
 
 impl Default for LauncherConfig {
@@ -59,13 +56,8 @@ impl Default for LauncherConfig {
         Self {
             theme: ThemePreset::default(),
             keep_open: false,
-            locale: default_locale(),
         }
     }
-}
-
-fn default_locale() -> String {
-    "en".to_string()
 }
 
 /// Game installation settings
@@ -244,7 +236,6 @@ mod tests {
         // Launcher defaults
         assert_eq!(config.launcher.theme, ThemePreset::Amber);
         assert!(!config.launcher.keep_open);
-        assert_eq!(config.launcher.locale, "en");
 
         // Game defaults
         assert!(config.game.directory.is_none());
