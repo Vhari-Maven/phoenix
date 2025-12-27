@@ -112,7 +112,11 @@ src/
 ├── legacy.rs            # One-time migration of old data locations
 ├── migration.rs         # Smart migration for updates (mods, tilesets, etc.)
 ├── soundpack.rs         # Soundpack service
-└── update.rs            # Update download and installation
+└── update/              # Update download and installation
+    ├── mod.rs           # Types (UpdatePhase, UpdateProgress), re-exports
+    ├── access.rs        # Pre-flight checks (locked files, game running)
+    ├── download.rs      # Download with progress tracking
+    └── install.rs       # Archive, extract, restore, rollback
 ```
 
 **Key patterns:**

@@ -181,7 +181,7 @@ pub struct PhoenixApp {
 The codebase separates:
 
 1. **State structs** (`src/state/`) - Own data and async task handles
-2. **Service modules** (`src/backup.rs`, `src/update.rs`, etc.) - Implement business logic
+2. **Service modules** (`src/backup.rs`, `src/update/`, etc.) - Implement business logic
 3. **UI modules** (`src/ui/`) - Render the interface
 
 ```
@@ -195,7 +195,11 @@ PhoenixApp (coordinator)
     │
     ├── Service Modules (business logic)
     │   ├── backup.rs
-    │   ├── update.rs
+    │   ├── update/
+    │   │   ├── mod.rs      (types, re-exports)
+    │   │   ├── access.rs   (pre-flight checks)
+    │   │   ├── download.rs (download logic)
+    │   │   └── install.rs  (archive, extract, restore)
     │   ├── github.rs
     │   └── soundpack.rs
     │
@@ -725,7 +729,10 @@ When finished:
 |------|---------|
 | `src/app_data.rs` | Compile-time embedded data (TOML/JSON configs from `embedded/`) |
 | `src/backup.rs` | Create/restore/list backups |
-| `src/update.rs` | Download and install updates |
+| `src/update/mod.rs` | Update types (UpdatePhase, UpdateProgress), re-exports |
+| `src/update/access.rs` | Pre-flight checks (detect locked files, game running) |
+| `src/update/download.rs` | Download with progress tracking |
+| `src/update/install.rs` | Archive, extract, restore, rollback |
 | `src/github.rs` | GitHub API client, release fetching |
 | `src/game.rs` | Game detection, version parsing, launching |
 | `src/migration.rs` | Smart migration (preserve mods/tilesets) |
