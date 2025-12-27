@@ -48,6 +48,7 @@ Phoenix includes a full CLI for scripting and automation. Running with no argume
 phoenix game detect              # Detect installed game version
 phoenix game launch              # Launch the game
 phoenix game info                # Show detailed game information
+phoenix game export              # Export user data for external builds
 
 # Backups
 phoenix backup list              # List all backups
