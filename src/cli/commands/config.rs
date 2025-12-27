@@ -87,7 +87,6 @@ fn get_config_value(config: &Config, key: &str) -> Result<String> {
     match parts.as_slice() {
         ["launcher", "theme"] => Ok(format!("{:?}", config.launcher.theme)),
         ["launcher", "keep_open"] => Ok(config.launcher.keep_open.to_string()),
-        ["launcher", "locale"] => Ok(config.launcher.locale.clone()),
         ["game", "directory"] => Ok(config
             .game
             .directory
@@ -125,9 +124,6 @@ fn set_config_value(config: &mut Config, key: &str, value: &str) -> Result<()> {
     match parts.as_slice() {
         ["launcher", "keep_open"] => {
             config.launcher.keep_open = value.parse()?;
-        }
-        ["launcher", "locale"] => {
-            config.launcher.locale = value.to_string();
         }
         ["game", "directory"] => {
             config.game.directory = Some(value.to_string());
