@@ -5,7 +5,7 @@ use clap::Subcommand;
 use serde::Serialize;
 
 use crate::backup;
-use crate::cli::output::{print_formatted, print_success, OutputFormat};
+use crate::cli::output::{OutputFormat, print_formatted, print_success};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game;
@@ -141,7 +141,10 @@ async fn check(format: OutputFormat) -> Result<()> {
         print_status_line(
             &mut lines,
             r.database_accessible,
-            &format!("Database accessible ({} cached versions)", r.cached_versions),
+            &format!(
+                "Database accessible ({} cached versions)",
+                r.cached_versions
+            ),
         );
         print_status_line(
             &mut lines,

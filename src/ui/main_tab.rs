@@ -3,8 +3,8 @@
 use eframe::egui::{self, RichText, Vec2};
 use egui_commonmark::CommonMarkViewer;
 
-use crate::app::PhoenixApp;
 use super::theme::Theme;
+use crate::app::PhoenixApp;
 use crate::ui::components::{progress_frame, render_current_file, render_file_progress};
 use crate::update::UpdatePhase;
 use crate::util::format_size;
@@ -50,7 +50,12 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         ui.vertical(|ui| {
                             ui.label(RichText::new("Version").color(theme.text_muted).size(11.0));
                             let version_text = info.version_display();
-                            ui.label(RichText::new(version_text).color(theme.text_primary).size(16.0).strong());
+                            ui.label(
+                                RichText::new(version_text)
+                                    .color(theme.text_primary)
+                                    .size(16.0)
+                                    .strong(),
+                            );
 
                             if info.is_stable() {
                                 ui.label(RichText::new("Stable").color(theme.success).size(11.0));
@@ -61,10 +66,21 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
                         // Middle column - executable
                         ui.vertical(|ui| {
-                            ui.label(RichText::new("Executable").color(theme.text_muted).size(11.0));
-                            ui.label(RichText::new(
-                                info.executable.file_name().unwrap_or_default().to_string_lossy().to_string()
-                            ).color(theme.text_primary));
+                            ui.label(
+                                RichText::new("Executable")
+                                    .color(theme.text_muted)
+                                    .size(11.0),
+                            );
+                            ui.label(
+                                RichText::new(
+                                    info.executable
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                        .to_string(),
+                                )
+                                .color(theme.text_primary),
+                            );
                         });
 
                         ui.add_space(40.0);
@@ -72,7 +88,10 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         // Right column - saves
                         ui.vertical(|ui| {
                             ui.label(RichText::new("Saves").color(theme.text_muted).size(11.0));
-                            ui.label(RichText::new(format_size(info.saves_size)).color(theme.text_primary));
+                            ui.label(
+                                RichText::new(format_size(info.saves_size))
+                                    .color(theme.text_primary),
+                            );
                         });
                     });
                 });
@@ -114,7 +133,8 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                 if has_releases {
                     let releases = app.current_releases();
                     let selected_text = app
-                        .releases.selected_idx
+                        .releases
+                        .selected_idx
                         .and_then(|i| releases.get(i))
                         .map(|r| r.name.as_str())
                         .unwrap_or("Select a release")
@@ -149,7 +169,10 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(!app.releases.loading, egui::Button::new("Refresh")).clicked() {
+                if ui
+                    .add_enabled(!app.releases.loading, egui::Button::new("Refresh"))
+                    .clicked()
+                {
                     let branch = app.config.game.branch.clone();
                     app.fetch_releases_for_branch(&branch);
                 }
@@ -201,7 +224,11 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         .corner_radius(4.0)
                         .inner_margin(egui::vec2(8.0, 4.0))
                         .show(ui, |ui| {
-                            ui.label(RichText::new("Ready to install").color(theme.accent).strong());
+                            ui.label(
+                                RichText::new("Ready to install")
+                                    .color(theme.accent)
+                                    .strong(),
+                            );
                         });
                 } else if app.is_selected_release_different() {
                     // Different version selected - can update
@@ -210,7 +237,11 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         .corner_radius(4.0)
                         .inner_margin(egui::vec2(8.0, 4.0))
                         .show(ui, |ui| {
-                            ui.label(RichText::new("Update available").color(theme.success).strong());
+                            ui.label(
+                                RichText::new("Update available")
+                                    .color(theme.success)
+                                    .strong(),
+                            );
                         });
                 } else if app.game_info.is_some() {
                     // Same version
@@ -220,7 +251,10 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         }
 
         // Show update progress
-        if app.is_updating() || app.update.progress.phase == UpdatePhase::Complete || app.update.progress.phase == UpdatePhase::Failed {
+        if app.is_updating()
+            || app.update.progress.phase == UpdatePhase::Complete
+            || app.update.progress.phase == UpdatePhase::Failed
+        {
             ui.add_space(12.0);
             render_update_progress(app, ui, &theme);
         }
@@ -248,7 +282,12 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
 
-                ui.label(RichText::new("Changelog").color(theme.accent).size(13.0).strong());
+                ui.label(
+                    RichText::new("Changelog")
+                        .color(theme.accent)
+                        .size(13.0)
+                        .strong(),
+                );
                 ui.add_space(12.0);
 
                 if let Some(idx) = app.releases.selected_idx {
@@ -266,15 +305,24 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                             .show(ui, |ui| {
                                 if let Some(ref text) = body {
                                     let processed = convert_urls_to_links(text);
-                                    CommonMarkViewer::new()
-                                        .show(ui, &mut app.ui.markdown_cache, &processed);
+                                    CommonMarkViewer::new().show(
+                                        ui,
+                                        &mut app.ui.markdown_cache,
+                                        &processed,
+                                    );
                                 } else if app.releases.changelog_loading {
                                     ui.horizontal(|ui| {
                                         ui.spinner();
-                                        ui.label(RichText::new("Loading changelog...").color(theme.text_muted));
+                                        ui.label(
+                                            RichText::new("Loading changelog...")
+                                                .color(theme.text_muted),
+                                        );
                                     });
                                 } else {
-                                    ui.label(RichText::new("No changelog available").color(theme.text_muted));
+                                    ui.label(
+                                        RichText::new("No changelog available")
+                                            .color(theme.text_muted),
+                                    );
                                 }
                             });
                     }
@@ -318,11 +366,19 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
         let update_btn = egui::Button::new(
             RichText::new(update_label)
-                .color(if can_click { theme.bg_darkest } else { theme.text_secondary })
+                .color(if can_click {
+                    theme.bg_darkest
+                } else {
+                    theme.text_secondary
+                })
                 .size(16.0)
-                .strong()
+                .strong(),
         )
-        .fill(if can_click { theme.success } else { theme.bg_medium })
+        .fill(if can_click {
+            theme.success
+        } else {
+            theme.bg_medium
+        })
         .min_size(Vec2::new(button_width, 44.0))
         .corner_radius(6.0);
 
@@ -336,11 +392,19 @@ pub fn render_main_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
         let can_launch = app.game_info.is_some() && !is_updating;
         let launch_btn = egui::Button::new(
             RichText::new("Launch Game")
-                .color(if can_launch { theme.bg_darkest } else { theme.text_muted })
+                .color(if can_launch {
+                    theme.bg_darkest
+                } else {
+                    theme.text_muted
+                })
                 .size(16.0)
-                .strong()
+                .strong(),
         )
-        .fill(if can_launch { theme.accent } else { theme.bg_medium })
+        .fill(if can_launch {
+            theme.accent
+        } else {
+            theme.bg_medium
+        })
         .min_size(Vec2::new(button_width, 44.0))
         .corner_radius(6.0);
 
@@ -375,59 +439,72 @@ fn render_update_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
     let progress = &app.update.progress;
 
     progress_frame(theme).show(ui, |ui| {
-            ui.set_width(ui.available_width());
+        ui.set_width(ui.available_width());
 
-            // Phase label with icon
-            let (phase_text, phase_color) = match progress.phase {
-                UpdatePhase::Downloading => ("Downloading...", theme.accent),
-                UpdatePhase::BackingUp => ("Backing up current installation...", theme.warning),
-                UpdatePhase::Extracting => ("Extracting files...", theme.accent),
-                UpdatePhase::Restoring => ("Restoring saves and settings...", theme.accent),
-                UpdatePhase::Complete => ("Update complete!", theme.success),
-                UpdatePhase::Failed => ("Update failed", theme.error),
-                UpdatePhase::Idle => ("Ready", theme.text_muted),
-            };
+        // Phase label with icon
+        let (phase_text, phase_color) = match progress.phase {
+            UpdatePhase::Downloading => ("Downloading...", theme.accent),
+            UpdatePhase::BackingUp => ("Backing up current installation...", theme.warning),
+            UpdatePhase::Extracting => ("Extracting files...", theme.accent),
+            UpdatePhase::Restoring => ("Restoring saves and settings...", theme.accent),
+            UpdatePhase::Complete => ("Update complete!", theme.success),
+            UpdatePhase::Failed => ("Update failed", theme.error),
+            UpdatePhase::Idle => ("Ready", theme.text_muted),
+        };
 
-            ui.label(RichText::new(phase_text).color(phase_color).size(13.0).strong());
-            ui.add_space(8.0);
+        ui.label(
+            RichText::new(phase_text)
+                .color(phase_color)
+                .size(13.0)
+                .strong(),
+        );
+        ui.add_space(8.0);
 
-            // Progress bar for download/extract phases
-            match progress.phase {
-                UpdatePhase::Downloading => {
-                    let fraction = progress.download_fraction();
-                    ui.add(egui::ProgressBar::new(fraction).show_percentage());
+        // Progress bar for download/extract phases
+        match progress.phase {
+            UpdatePhase::Downloading => {
+                let fraction = progress.download_fraction();
+                ui.add(egui::ProgressBar::new(fraction).show_percentage());
 
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        // Downloaded / Total
-                        let downloaded = format_size(progress.bytes_downloaded);
-                        let total = format_size(progress.total_bytes);
-                        ui.label(RichText::new(format!("{} / {}", downloaded, total)).color(theme.text_muted).size(11.0));
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    // Downloaded / Total
+                    let downloaded = format_size(progress.bytes_downloaded);
+                    let total = format_size(progress.total_bytes);
+                    ui.label(
+                        RichText::new(format!("{} / {}", downloaded, total))
+                            .color(theme.text_muted)
+                            .size(11.0),
+                    );
 
-                        ui.add_space(16.0);
+                    ui.add_space(16.0);
 
-                        // Speed
-                        if progress.speed > 0 {
-                            let speed = format_size(progress.speed);
-                            ui.label(RichText::new(format!("{}/s", speed)).color(theme.text_muted).size(11.0));
-                        }
-                    });
-                }
-                UpdatePhase::Extracting => {
-                    let fraction = progress.extract_fraction();
-                    ui.add(egui::ProgressBar::new(fraction).show_percentage());
-
-                    ui.add_space(4.0);
-                    render_file_progress(ui, progress.files_extracted, progress.total_files, theme);
-                    render_current_file(ui, &progress.current_file, theme);
-                }
-                UpdatePhase::BackingUp | UpdatePhase::Restoring => {
-                    // Indeterminate progress (spinner-like)
-                    ui.add(egui::ProgressBar::new(0.0).animate(true));
-                }
-                _ => {}
+                    // Speed
+                    if progress.speed > 0 {
+                        let speed = format_size(progress.speed);
+                        ui.label(
+                            RichText::new(format!("{}/s", speed))
+                                .color(theme.text_muted)
+                                .size(11.0),
+                        );
+                    }
+                });
             }
-        });
+            UpdatePhase::Extracting => {
+                let fraction = progress.extract_fraction();
+                ui.add(egui::ProgressBar::new(fraction).show_percentage());
+
+                ui.add_space(4.0);
+                render_file_progress(ui, progress.files_extracted, progress.total_files, theme);
+                render_current_file(ui, &progress.current_file, theme);
+            }
+            UpdatePhase::BackingUp | UpdatePhase::Restoring => {
+                // Indeterminate progress (spinner-like)
+                ui.add(egui::ProgressBar::new(0.0).animate(true));
+            }
+            _ => {}
+        }
+    });
 }
 
 /// Convert raw URLs in text to markdown links

@@ -90,13 +90,13 @@ impl Theme {
             text_secondary: Color32::from_rgb(200, 200, 200),
             text_muted: Color32::from_rgb(140, 140, 140),
 
-            accent: Color32::from_rgb(245, 158, 11),       // Amber-500
+            accent: Color32::from_rgb(245, 158, 11), // Amber-500
             accent_hover: Color32::from_rgb(251, 191, 36), // Amber-400
-            accent_muted: Color32::from_rgb(180, 116, 8),  // Darker amber
+            accent_muted: Color32::from_rgb(180, 116, 8), // Darker amber
 
-            success: Color32::from_rgb(34, 197, 94),  // Green-500
-            warning: Color32::from_rgb(234, 179, 8),  // Yellow-500
-            error: Color32::from_rgb(239, 68, 68),    // Red-500
+            success: Color32::from_rgb(34, 197, 94), // Green-500
+            warning: Color32::from_rgb(234, 179, 8), // Yellow-500
+            error: Color32::from_rgb(239, 68, 68),   // Red-500
 
             border: Color32::from_rgb(63, 63, 70),
             selection: Color32::from_rgb(245, 158, 11).gamma_multiply(0.3),
@@ -115,13 +115,13 @@ impl Theme {
             text_secondary: Color32::from_rgb(200, 195, 220),
             text_muted: Color32::from_rgb(140, 135, 160),
 
-            accent: Color32::from_rgb(168, 85, 247),        // Purple-500
+            accent: Color32::from_rgb(168, 85, 247), // Purple-500
             accent_hover: Color32::from_rgb(192, 132, 252), // Purple-400
-            accent_muted: Color32::from_rgb(126, 58, 200),  // Darker purple
+            accent_muted: Color32::from_rgb(126, 58, 200), // Darker purple
 
-            success: Color32::from_rgb(74, 222, 128),  // Green-400
-            warning: Color32::from_rgb(250, 204, 21),  // Yellow-400
-            error: Color32::from_rgb(248, 113, 113),   // Red-400
+            success: Color32::from_rgb(74, 222, 128), // Green-400
+            warning: Color32::from_rgb(250, 204, 21), // Yellow-400
+            error: Color32::from_rgb(248, 113, 113),  // Red-400
 
             border: Color32::from_rgb(75, 65, 100),
             selection: Color32::from_rgb(168, 85, 247).gamma_multiply(0.3),
@@ -140,13 +140,13 @@ impl Theme {
             text_secondary: Color32::from_rgb(200, 210, 220),
             text_muted: Color32::from_rgb(130, 145, 160),
 
-            accent: Color32::from_rgb(6, 182, 212),         // Cyan-500
-            accent_hover: Color32::from_rgb(34, 211, 238),  // Cyan-400
-            accent_muted: Color32::from_rgb(8, 140, 165),   // Darker cyan
+            accent: Color32::from_rgb(6, 182, 212), // Cyan-500
+            accent_hover: Color32::from_rgb(34, 211, 238), // Cyan-400
+            accent_muted: Color32::from_rgb(8, 140, 165), // Darker cyan
 
-            success: Color32::from_rgb(52, 211, 153),  // Emerald-400
-            warning: Color32::from_rgb(251, 191, 36),  // Amber-400
-            error: Color32::from_rgb(251, 113, 133),   // Rose-400
+            success: Color32::from_rgb(52, 211, 153), // Emerald-400
+            warning: Color32::from_rgb(251, 191, 36), // Amber-400
+            error: Color32::from_rgb(251, 113, 133),  // Rose-400
 
             border: Color32::from_rgb(51, 65, 85),
             selection: Color32::from_rgb(6, 182, 212).gamma_multiply(0.3),
@@ -165,13 +165,13 @@ impl Theme {
             text_secondary: Color32::from_rgb(190, 220, 200),
             text_muted: Color32::from_rgb(120, 150, 130),
 
-            accent: Color32::from_rgb(34, 197, 94),         // Green-500
-            accent_hover: Color32::from_rgb(74, 222, 128),  // Green-400
-            accent_muted: Color32::from_rgb(22, 150, 70),   // Darker green
+            accent: Color32::from_rgb(34, 197, 94), // Green-500
+            accent_hover: Color32::from_rgb(74, 222, 128), // Green-400
+            accent_muted: Color32::from_rgb(22, 150, 70), // Darker green
 
-            success: Color32::from_rgb(74, 222, 128),   // Green-400
-            warning: Color32::from_rgb(253, 224, 71),   // Yellow-300
-            error: Color32::from_rgb(252, 165, 165),    // Red-300
+            success: Color32::from_rgb(74, 222, 128), // Green-400
+            warning: Color32::from_rgb(253, 224, 71), // Yellow-300
+            error: Color32::from_rgb(252, 165, 165),  // Red-300
 
             border: Color32::from_rgb(50, 70, 55),
             selection: Color32::from_rgb(34, 197, 94).gamma_multiply(0.3),
@@ -181,24 +181,24 @@ impl Theme {
     /// Catppuccin Mocha theme - popular community theme
     pub fn catppuccin() -> Self {
         Self {
-            bg_darkest: Color32::from_rgb(17, 17, 27),    // Crust
-            bg_dark: Color32::from_rgb(24, 24, 37),       // Mantle
-            bg_medium: Color32::from_rgb(30, 30, 46),     // Base
-            bg_light: Color32::from_rgb(49, 50, 68),      // Surface0
+            bg_darkest: Color32::from_rgb(17, 17, 27), // Crust
+            bg_dark: Color32::from_rgb(24, 24, 37),    // Mantle
+            bg_medium: Color32::from_rgb(30, 30, 46),  // Base
+            bg_light: Color32::from_rgb(49, 50, 68),   // Surface0
 
-            text_primary: Color32::from_rgb(205, 214, 244),   // Text
+            text_primary: Color32::from_rgb(205, 214, 244), // Text
             text_secondary: Color32::from_rgb(186, 194, 222), // Subtext1
-            text_muted: Color32::from_rgb(147, 153, 178),     // Overlay1
+            text_muted: Color32::from_rgb(147, 153, 178),   // Overlay1
 
-            accent: Color32::from_rgb(137, 180, 250),        // Blue
-            accent_hover: Color32::from_rgb(180, 190, 254),  // Lavender
-            accent_muted: Color32::from_rgb(116, 148, 204),  // Darker blue
+            accent: Color32::from_rgb(137, 180, 250), // Blue
+            accent_hover: Color32::from_rgb(180, 190, 254), // Lavender
+            accent_muted: Color32::from_rgb(116, 148, 204), // Darker blue
 
-            success: Color32::from_rgb(166, 227, 161),  // Green
-            warning: Color32::from_rgb(249, 226, 175),  // Yellow
-            error: Color32::from_rgb(243, 139, 168),    // Red
+            success: Color32::from_rgb(166, 227, 161), // Green
+            warning: Color32::from_rgb(249, 226, 175), // Yellow
+            error: Color32::from_rgb(243, 139, 168),   // Red
 
-            border: Color32::from_rgb(69, 71, 90),  // Surface1
+            border: Color32::from_rgb(69, 71, 90), // Surface1
             selection: Color32::from_rgb(137, 180, 250).gamma_multiply(0.3),
         }
     }

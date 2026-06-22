@@ -25,9 +25,25 @@ impl ShellCompleter {
         Self {
             commands: vec![
                 ("game", vec!["detect", "launch", "info"]),
-                ("backup", vec!["list", "create", "restore", "delete", "verify"]),
-                ("update", vec!["check", "releases", "download", "install", "apply"]),
-                ("soundpack", vec!["list", "available", "install", "delete", "enable", "disable"]),
+                (
+                    "backup",
+                    vec!["list", "create", "restore", "delete", "verify"],
+                ),
+                (
+                    "update",
+                    vec!["check", "releases", "download", "install", "apply"],
+                ),
+                (
+                    "soundpack",
+                    vec![
+                        "list",
+                        "available",
+                        "install",
+                        "delete",
+                        "enable",
+                        "disable",
+                    ],
+                ),
                 ("config", vec!["show", "get", "set", "path"]),
                 ("diag", vec!["paths", "check", "clear-cache"]),
                 ("help", vec![]),
@@ -309,8 +325,8 @@ pub async fn run() -> Result<()> {
 
                 let args = parse_args(line);
                 match run_command(args).await {
-                    Ok(true) => continue,  // Command succeeded, keep running
-                    Ok(false) => break,    // Exit requested, break to save history
+                    Ok(true) => continue, // Command succeeded, keep running
+                    Ok(false) => break,   // Exit requested, break to save history
                     Err(e) => eprintln!("Error: {}", e),
                 }
             }

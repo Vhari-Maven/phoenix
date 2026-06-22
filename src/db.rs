@@ -86,7 +86,7 @@ impl Database {
                 body TEXT NOT NULL,
                 fetched_on TEXT NOT NULL DEFAULT (datetime('now'))
             );
-            "
+            ",
         )?;
         Ok(())
     }
@@ -106,7 +106,7 @@ impl Database {
         // Check database for cached experimental versions
         let mut stmt = self.conn.prepare(
             "SELECT version, stable, build_number, released_on
-             FROM game_versions WHERE sha256 = ?"
+             FROM game_versions WHERE sha256 = ?",
         )?;
 
         let result = stmt.query_row(params![sha256], |row| {
@@ -127,7 +127,7 @@ impl Database {
     /// Get cached SHA256 hash for an executable if file metadata matches
     pub fn get_cached_hash(&self, path: &str, size: u64, mtime: i64) -> Result<Option<String>> {
         let mut stmt = self.conn.prepare(
-            "SELECT sha256 FROM exe_hash_cache WHERE path = ? AND size = ? AND mtime = ?"
+            "SELECT sha256 FROM exe_hash_cache WHERE path = ? AND size = ? AND mtime = ?",
         )?;
 
         let result = stmt.query_row(params![path, size as i64, mtime], |row| {
@@ -152,11 +152,9 @@ impl Database {
 
     /// Count the number of cached version entries
     pub fn count_cached_versions(&self) -> Result<usize> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM exe_hash_cache",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM exe_hash_cache", [], |row| row.get(0))?;
         Ok(count as usize)
     }
 
@@ -170,9 +168,9 @@ impl Database {
 
     /// Get cached changelog for a release tag
     pub fn get_changelog(&self, tag: &str) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT body FROM release_changelogs WHERE tag = ?"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT body FROM release_changelogs WHERE tag = ?")?;
 
         let result = stmt.query_row(params![tag], |row| row.get::<_, String>(0));
 
@@ -205,9 +203,9 @@ mod tests {
         db.init_schema().unwrap();
 
         // Test known stable version
-        let result = db.get_version(
-            "3e0b15543015389c34ad679a931186a1264dbccb010b813f63b6caef2d158dc8"
-        ).unwrap();
+        let result = db
+            .get_version("3e0b15543015389c34ad679a931186a1264dbccb010b813f63b6caef2d158dc8")
+            .unwrap();
 
         assert!(result.is_some());
         let info = result.unwrap();

@@ -37,9 +37,9 @@ fn embed_windows_resources() {
 /// Create an ICO file from the PNG icon
 #[cfg(windows)]
 fn create_ico(output_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    use image::imageops::FilterType;
     use std::fs;
     use std::io::{BufWriter, Write};
-    use image::imageops::FilterType;
 
     let png_data = include_bytes!("assets/icon.png");
     let img = image::load_from_memory(png_data)?;

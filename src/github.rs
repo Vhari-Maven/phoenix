@@ -66,7 +66,10 @@ impl RateLimitInfo {
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse().ok());
 
-        Self { remaining, reset_at }
+        Self {
+            remaining,
+            reset_at,
+        }
     }
 
     /// Check if rate limit is low (at or below warning threshold)
@@ -103,9 +106,7 @@ pub struct GitHubClient {
 impl GitHubClient {
     /// Create a new GitHub API client
     pub fn new() -> Result<Self> {
-        let client = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            .build()?;
+        let client = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
 
         Ok(Self { client })
     }
@@ -178,9 +179,11 @@ impl GitHubClient {
         // Convert embedded releases to Release structs
         for embedded in &config.releases {
             // Only include releases that have Windows assets
-            if let (Some(asset_name), Some(asset_url), Some(asset_size)) =
-                (&embedded.asset_name, &embedded.asset_url, embedded.asset_size)
-            {
+            if let (Some(asset_name), Some(asset_url), Some(asset_size)) = (
+                &embedded.asset_name,
+                &embedded.asset_url,
+                embedded.asset_size,
+            ) {
                 releases.push(Release {
                     tag_name: embedded.tag.clone(),
                     name: embedded.name.clone(),
@@ -195,10 +198,7 @@ impl GitHubClient {
             }
         }
 
-        tracing::debug!(
-            "Loaded {} embedded stable releases",
-            releases.len()
-        );
+        tracing::debug!("Loaded {} embedded stable releases", releases.len());
 
         // Check for new releases (future letters) via API
         for letter in &config.check_letters {
@@ -227,7 +227,10 @@ impl GitHubClient {
             releases.len(),
             start.elapsed().as_secs_f32()
         );
-        Ok(FetchResult { data: releases, rate_limit: last_rate_limit })
+        Ok(FetchResult {
+            data: releases,
+            rate_limit: last_rate_limit,
+        })
     }
 
     /// Fetch releases by specific tag names (for debugging/testing)
@@ -243,7 +246,10 @@ impl GitHubClient {
             }
         }
 
-        Ok(FetchResult { data: releases, rate_limit: last_rate_limit })
+        Ok(FetchResult {
+            data: releases,
+            rate_limit: last_rate_limit,
+        })
     }
 
     /// Fetch experimental releases (recent builds from releases list)
@@ -278,7 +284,10 @@ impl GitHubClient {
             start.elapsed().as_secs_f32()
         );
 
-        Ok(FetchResult { data: releases, rate_limit })
+        Ok(FetchResult {
+            data: releases,
+            rate_limit,
+        })
     }
 
     /// Find the graphical x64 asset for the current platform.

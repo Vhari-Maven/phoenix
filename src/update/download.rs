@@ -45,7 +45,10 @@ pub async fn download_asset(
         anyhow::bail!(
             "Download failed with status: {} - {}",
             response.status(),
-            response.status().canonical_reason().unwrap_or("Unknown error")
+            response
+                .status()
+                .canonical_reason()
+                .unwrap_or("Unknown error")
         );
     }
 

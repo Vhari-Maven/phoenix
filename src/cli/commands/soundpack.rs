@@ -7,7 +7,9 @@ use clap::Subcommand;
 use serde::Serialize;
 use tokio::sync::watch;
 
-use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
+use crate::cli::output::{
+    OutputFormat, print_error, print_formatted, print_success, should_show_progress,
+};
 use crate::config::Config;
 use crate::github::GitHubClient;
 use crate::soundpack::{self, SoundpackProgress};
@@ -124,10 +126,7 @@ async fn list(format: OutputFormat) -> Result<()> {
 
         let mut lines = vec![format!("Installed soundpacks ({}):\n", r.total_count)];
 
-        lines.push(format!(
-            "{:<30} {:>10} {:>8}",
-            "NAME", "SIZE", "STATUS"
-        ));
+        lines.push(format!("{:<30} {:>10} {:>8}", "NAME", "SIZE", "STATUS"));
         lines.push("-".repeat(52));
 
         for sp in &r.soundpacks {
@@ -161,7 +160,9 @@ async fn available(format: OutputFormat) -> Result<()> {
         })
         .collect();
 
-    let result = AvailableListResult { soundpacks: entries };
+    let result = AvailableListResult {
+        soundpacks: entries,
+    };
 
     print_formatted(&result, format, |r| {
         if r.soundpacks.is_empty() {
@@ -229,10 +230,7 @@ async fn install(
                         }
                     }
                     soundpack::SoundpackPhase::Extracting => {
-                        eprint!(
-                            "\rExtracting: {}/{}   ",
-                            p.files_extracted, p.total_files
-                        );
+                        eprint!("\rExtracting: {}/{}   ", p.files_extracted, p.total_files);
                     }
                     _ => {
                         eprint!("\r{}   ", p.phase.description());
@@ -246,8 +244,8 @@ async fn install(
     match (name, file) {
         (_, Some(archive_path)) => {
             // Install from local file
-            let result = soundpack::install_from_file(archive_path.clone(), game_dir, progress_tx)
-                .await?;
+            let result =
+                soundpack::install_from_file(archive_path.clone(), game_dir, progress_tx).await?;
 
             print_success(
                 &format!(

@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use serde::Serialize;
 
-use crate::cli::output::{print_formatted, OutputFormat};
+use crate::cli::output::{OutputFormat, print_formatted};
 use crate::config::Config;
 
 #[derive(Subcommand, Debug)]

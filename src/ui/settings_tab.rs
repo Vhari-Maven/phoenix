@@ -2,8 +2,8 @@
 
 use eframe::egui::{self, RichText, Vec2};
 
-use crate::app::PhoenixApp;
 use super::theme::ThemePreset;
+use crate::app::PhoenixApp;
 
 /// Render the settings tab
 pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
@@ -79,7 +79,8 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         ];
 
                         for (label, color) in colors {
-                            let (rect, response) = ui.allocate_exact_size(swatch_size, egui::Sense::hover());
+                            let (rect, response) =
+                                ui.allocate_exact_size(swatch_size, egui::Sense::hover());
                             ui.painter().rect_filled(rect, 4.0, color);
                             response.on_hover_text(label);
                             ui.add_space(4.0);
@@ -154,11 +155,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                         app.save_config();
                     }
                     ui.label(
-                        RichText::new(
-                            "  Leave saves in place instead of copying from archive",
-                        )
-                        .color(theme.text_muted)
-                        .size(11.0),
+                        RichText::new("  Leave saves in place instead of copying from archive")
+                            .color(theme.text_muted)
+                            .size(11.0),
                     );
 
                     ui.add_space(8.0);
@@ -246,7 +245,9 @@ pub fn render_settings_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
                     // Max backups
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Max auto-backups to keep:").color(theme.text_muted));
+                        ui.label(
+                            RichText::new("Max auto-backups to keep:").color(theme.text_muted),
+                        );
                         if ui
                             .add(
                                 egui::DragValue::new(&mut app.config.backups.max_count)
