@@ -3,11 +3,11 @@
 use eframe::egui::{self, Color32, CornerRadius, RichText, Vec2};
 use std::path::PathBuf;
 
+use super::theme::Theme;
 use crate::app::PhoenixApp;
 use crate::app_data::launcher_config;
 use crate::config::Config;
 use crate::state::Tab;
-use super::theme::Theme;
 
 /// Render a tab button
 pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str) {
@@ -35,17 +35,23 @@ pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str
         app.ui.active_tab = tab;
 
         // Load backup list when switching to Backups tab
-        if tab == Tab::Backups && previous_tab != Tab::Backups
-            && app.backup.list.is_empty() && !app.backup.list_loading {
-                app.refresh_backup_list();
-            }
+        if tab == Tab::Backups
+            && previous_tab != Tab::Backups
+            && app.backup.list.is_empty()
+            && !app.backup.list_loading
+        {
+            app.refresh_backup_list();
+        }
 
         // Load soundpack list when switching to Soundpacks tab
-        if tab == Tab::Soundpacks && previous_tab != Tab::Soundpacks
+        if tab == Tab::Soundpacks
+            && previous_tab != Tab::Soundpacks
             && let Some(ref dir) = app.config.game.directory
-                && app.soundpack.list.is_empty() && !app.soundpack.list_loading {
-                    app.refresh_soundpack_list(&PathBuf::from(dir));
-                }
+            && app.soundpack.list.is_empty()
+            && !app.soundpack.list_loading
+        {
+            app.refresh_soundpack_list(&PathBuf::from(dir));
+        }
     }
 }
 
@@ -71,14 +77,14 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                     RichText::new("Phoenix")
                         .size(24.0)
                         .strong()
-                        .color(theme.accent)
+                        .color(theme.accent),
                 );
 
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("CDDA Game Launcher")
                         .size(14.0)
-                        .color(theme.text_secondary)
+                        .color(theme.text_secondary),
                 );
 
                 ui.add_space(8.0);
@@ -86,7 +92,7 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                 // Version
                 ui.label(
                     RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                        .color(theme.text_muted)
+                        .color(theme.text_muted),
                 );
 
                 ui.add_space(8.0);
@@ -107,23 +113,26 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                     RichText::new("Data Locations")
                         .size(12.0)
                         .strong()
-                        .color(theme.accent)
+                        .color(theme.accent),
                 );
                 ui.add_space(4.0);
 
                 if let Ok(path) = Config::config_path()
                     && let Some(dir) = path.parent()
-                        && ui.link("Config").clicked() {
-                            let _ = open::that(dir);
-                        }
+                    && ui.link("Config").clicked()
+                {
+                    let _ = open::that(dir);
+                }
                 if let Ok(path) = Config::backups_dir()
-                    && ui.link("Backups").clicked() {
-                        let _ = open::that(&path);
-                    }
+                    && ui.link("Backups").clicked()
+                {
+                    let _ = open::that(&path);
+                }
                 if let Ok(path) = Config::data_dir()
-                    && ui.link("Data").clicked() {
-                        let _ = open::that(&path);
-                    }
+                    && ui.link("Data").clicked()
+                {
+                    let _ = open::that(&path);
+                }
 
                 ui.add_space(8.0);
 
@@ -131,7 +140,7 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                 ui.label(
                     RichText::new("Built with Rust + egui")
                         .size(11.0)
-                        .color(theme.text_muted)
+                        .color(theme.text_muted),
                 );
 
                 ui.add_space(12.0);

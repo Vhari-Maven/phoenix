@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use crate::backup::{self, AutoBackupType, BackupProgress};
 use crate::github::{GitHubClient, Release, ReleaseAsset};
 use crate::state::StateEvent;
-use crate::task::{poll_task, PollResult};
+use crate::task::{PollResult, poll_task};
 use crate::update::{self, UpdatePhase, UpdateProgress};
 
 /// Configuration for starting an update
@@ -38,7 +38,6 @@ pub struct UpdateState {
     /// Error message from last update attempt
     pub error: Option<String>,
 }
-
 
 impl UpdateState {
     /// Check if an update is currently in progress
@@ -86,7 +85,11 @@ impl UpdateState {
         let version_tag = params.release.tag_name.clone();
         let game_dir = params.game_dir;
 
-        tracing::info!("Starting update: {} from {}", params.asset.name, download_url);
+        tracing::info!(
+            "Starting update: {} from {}",
+            params.asset.name,
+            download_url
+        );
 
         // Spawn the update task
         self.task = Some(tokio::spawn(async move {
@@ -148,7 +151,10 @@ impl UpdateState {
             Ok(())
         }));
 
-        Some(StateEvent::StatusMessage(format!("Downloading {}...", release_name)))
+        Some(StateEvent::StatusMessage(format!(
+            "Downloading {}...",
+            release_name
+        )))
     }
 
     /// Poll the update task for progress and completion
@@ -157,12 +163,13 @@ impl UpdateState {
 
         // Update progress from channel
         if let Some(rx) = &mut self.progress_rx
-            && rx.has_changed().unwrap_or(false) {
-                self.progress = rx.borrow_and_update().clone();
-                events.push(StateEvent::StatusMessage(
-                    self.progress.phase.description().to_string(),
-                ));
-            }
+            && rx.has_changed().unwrap_or(false)
+        {
+            self.progress = rx.borrow_and_update().clone();
+            events.push(StateEvent::StatusMessage(
+                self.progress.phase.description().to_string(),
+            ));
+        }
 
         // Check if task is complete
         match poll_task(&mut self.task) {
@@ -172,7 +179,9 @@ impl UpdateState {
                 events.push(StateEvent::StatusMessage(
                     "Update complete! Refreshing game info...".to_string(),
                 ));
-                events.push(StateEvent::LogInfo("Update completed successfully".to_string()));
+                events.push(StateEvent::LogInfo(
+                    "Update completed successfully".to_string(),
+                ));
                 events.push(StateEvent::RefreshGameInfo);
             }
             PollResult::Complete(Ok(Err(e))) => {

@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 
 use crate::backup::{self, BackupError, BackupInfo, BackupPhase, BackupProgress};
 use crate::state::StateEvent;
-use crate::task::{poll_task, PollResult};
+use crate::task::{PollResult, poll_task};
 
 /// Backup-related state
 #[derive(Default)]
@@ -36,7 +36,6 @@ pub struct BackupState {
     /// Whether to show restore confirmation
     pub confirm_restore: bool,
 }
-
 
 impl BackupState {
     /// Check if a backup operation is in progress
@@ -95,7 +94,10 @@ impl BackupState {
         // Clear input on success start
         self.name_input.clear();
 
-        Some(StateEvent::StatusMessage(format!("Creating backup: {}", name_for_status)))
+        Some(StateEvent::StatusMessage(format!(
+            "Creating backup: {}",
+            name_for_status
+        )))
     }
 
     /// Refresh the backup list
@@ -108,9 +110,7 @@ impl BackupState {
         self.selected_idx = None;
         self.error = None;
 
-        self.list_task = Some(tokio::spawn(async move {
-            backup::list_backups().await
-        }));
+        self.list_task = Some(tokio::spawn(async move { backup::list_backups().await }));
     }
 
     /// Delete the selected backup
@@ -130,7 +130,10 @@ impl BackupState {
 
         self.selected_idx = None;
 
-        Some(StateEvent::StatusMessage(format!("Deleting backup: {}", backup_name_for_status)))
+        Some(StateEvent::StatusMessage(format!(
+            "Deleting backup: {}",
+            backup_name_for_status
+        )))
     }
 
     /// Restore the selected backup
@@ -157,10 +160,20 @@ impl BackupState {
         tracing::info!("Restoring backup: {}", backup_name);
 
         self.task = Some(tokio::spawn(async move {
-            backup::restore_backup(&game_dir, &backup_name, backup_first, compression_level, progress_tx).await
+            backup::restore_backup(
+                &game_dir,
+                &backup_name,
+                backup_first,
+                compression_level,
+                progress_tx,
+            )
+            .await
         }));
 
-        Some(StateEvent::StatusMessage(format!("Restoring backup: {}", backup_name_for_status)))
+        Some(StateEvent::StatusMessage(format!(
+            "Restoring backup: {}",
+            backup_name_for_status
+        )))
     }
 
     /// Poll backup tasks for progress and completion
@@ -169,20 +182,25 @@ impl BackupState {
 
         // Update progress from channel
         if let Some(rx) = &mut self.progress_rx
-            && rx.has_changed().unwrap_or(false) {
-                self.progress = rx.borrow_and_update().clone();
-                events.push(StateEvent::StatusMessage(
-                    self.progress.phase.description().to_string(),
-                ));
-            }
+            && rx.has_changed().unwrap_or(false)
+        {
+            self.progress = rx.borrow_and_update().clone();
+            events.push(StateEvent::StatusMessage(
+                self.progress.phase.description().to_string(),
+            ));
+        }
 
         // Check if backup operation task is complete
         match poll_task(&mut self.task) {
             PollResult::Complete(Ok(Ok(()))) => {
                 self.progress_rx = None;
                 self.progress.phase = BackupPhase::Complete;
-                events.push(StateEvent::StatusMessage("Backup operation complete!".to_string()));
-                events.push(StateEvent::LogInfo("Backup operation completed successfully".to_string()));
+                events.push(StateEvent::StatusMessage(
+                    "Backup operation complete!".to_string(),
+                ));
+                events.push(StateEvent::LogInfo(
+                    "Backup operation completed successfully".to_string(),
+                ));
 
                 // Trigger backup list refresh
                 self.refresh_list();
@@ -191,7 +209,10 @@ impl BackupState {
                 self.progress_rx = None;
                 self.progress.phase = BackupPhase::Failed;
                 let msg = e.to_string();
-                events.push(StateEvent::LogError(format!("Backup operation failed: {}", msg)));
+                events.push(StateEvent::LogError(format!(
+                    "Backup operation failed: {}",
+                    msg
+                )));
                 self.error = Some(msg.clone());
                 events.push(StateEvent::StatusMessage(format!("Backup failed: {}", msg)));
             }
@@ -212,16 +233,25 @@ impl BackupState {
             PollResult::Complete(Ok(Ok(list))) => {
                 self.list_loading = false;
                 self.list = list;
-                events.push(StateEvent::LogInfo(format!("Loaded {} backups", self.list.len())));
+                events.push(StateEvent::LogInfo(format!(
+                    "Loaded {} backups",
+                    self.list.len()
+                )));
             }
             PollResult::Complete(Ok(Err(e))) => {
                 self.list_loading = false;
-                events.push(StateEvent::LogError(format!("Failed to load backup list: {}", e)));
+                events.push(StateEvent::LogError(format!(
+                    "Failed to load backup list: {}",
+                    e
+                )));
                 self.error = Some(format!("Failed to load backups: {}", e));
             }
             PollResult::Complete(Err(e)) => {
                 self.list_loading = false;
-                events.push(StateEvent::LogError(format!("Backup list task panicked: {}", e)));
+                events.push(StateEvent::LogError(format!(
+                    "Backup list task panicked: {}",
+                    e
+                )));
             }
             PollResult::Pending => ctx.request_repaint(),
             PollResult::NoTask => {}

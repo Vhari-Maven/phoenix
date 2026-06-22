@@ -48,13 +48,11 @@ fn load_icon() -> Option<egui::IconData> {
 /// Returns a handle that must be kept alive for the duration of the app.
 #[cfg(windows)]
 fn acquire_single_instance() -> Option<HANDLE> {
-    use windows::Win32::Foundation::GetLastError;
     use windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
+    use windows::Win32::Foundation::GetLastError;
 
     // Create a unique mutex name for this application
-    let mutex_name: Vec<u16> = "Global\\PhoenixCDDALauncher\0"
-        .encode_utf16()
-        .collect();
+    let mutex_name: Vec<u16> = "Global\\PhoenixCDDALauncher\0".encode_utf16().collect();
 
     unsafe {
         let handle = CreateMutexW(None, false, PCWSTR(mutex_name.as_ptr())).ok()?;
@@ -122,7 +120,10 @@ fn acquire_single_instance() -> Option<InstanceGuard> {
         }
         // Locking failed for another reason: don't block the user.
         Err(TryLockError::Error(e)) => {
-            tracing::warn!("File locking unavailable ({}); single-instance check skipped", e);
+            tracing::warn!(
+                "File locking unavailable ({}); single-instance check skipped",
+                e
+            );
             Some(InstanceGuard(Some(file)))
         }
     }
@@ -143,7 +144,7 @@ fn is_verbose() -> bool {
 /// Attach to parent console or allocate a new one for CLI output
 #[cfg(windows)]
 fn attach_console() {
-    use windows::Win32::System::Console::{AttachConsole, AllocConsole, ATTACH_PARENT_PROCESS};
+    use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole};
 
     unsafe {
         // Try to attach to parent console (e.g., cmd.exe)
@@ -216,7 +217,9 @@ async fn run_gui() -> Result<()> {
             // Show a message box on Windows
             #[cfg(windows)]
             {
-                use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK, MB_ICONINFORMATION};
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    MB_ICONINFORMATION, MB_OK, MessageBoxW,
+                };
                 let title: Vec<u16> = "Phoenix\0".encode_utf16().collect();
                 let msg: Vec<u16> = "Phoenix is already running.\0".encode_utf16().collect();
                 unsafe {

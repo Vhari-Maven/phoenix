@@ -12,7 +12,9 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::app_data::migration_config;
-use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
+use crate::cli::output::{
+    OutputFormat, print_error, print_formatted, print_success, should_show_progress,
+};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game::{self, GameInfo};
@@ -71,7 +73,10 @@ pub async fn run(command: GameCommands, format: OutputFormat, quiet: bool) -> Re
         GameCommands::Detect { dir } => detect(dir, format, quiet).await,
         GameCommands::Launch { params } => launch(params, quiet).await,
         GameCommands::Info { dir } => info(dir, format, quiet).await,
-        GameCommands::Export { output, compression } => export(output, compression, format, quiet).await,
+        GameCommands::Export {
+            output,
+            compression,
+        } => export(output, compression, format, quiet).await,
     }
 }
 
@@ -244,7 +249,10 @@ fn format_detect_text(result: &DetectResult) -> String {
     }
 
     if result.saves_size_bytes > 0 {
-        lines.push(format!("Saves size: {}", format_size(result.saves_size_bytes)));
+        lines.push(format!(
+            "Saves size: {}",
+            format_size(result.saves_size_bytes)
+        ));
     }
 
     lines.join("\n")
@@ -274,8 +282,14 @@ fn format_info_text(result: &GameInfoResult) -> String {
         lines.push(format!("Executable: {}", exe_name));
     }
 
-    lines.push(format!("Total size: {}", format_size(result.total_size_bytes)));
-    lines.push(format!("Saves size: {}", format_size(result.saves_size_bytes)));
+    lines.push(format!(
+        "Total size: {}",
+        format_size(result.total_size_bytes)
+    ));
+    lines.push(format!(
+        "Saves size: {}",
+        format_size(result.saves_size_bytes)
+    ));
 
     if let Some(released) = &result.released_on {
         lines.push(format!("Build: {}", released));
@@ -334,7 +348,10 @@ async fn export(
     let show_progress = should_show_progress(quiet, format);
     let game_dir_clone = game_dir.clone();
     let output_path_clone = output_path.clone();
-    let dirs_exported: Vec<String> = dirs_to_export.iter().map(|(name, _)| name.clone()).collect();
+    let dirs_exported: Vec<String> = dirs_to_export
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect();
 
     // Run export in blocking task
     let (file_count, compressed_size, uncompressed_size) = tokio::task::spawn_blocking(move || {
@@ -368,7 +385,10 @@ async fn export(
             format!("Directories: {}", r.directories_exported.join(", ")),
         ];
         lines.push(String::new());
-        lines.push("Extract this zip into your CDDA build directory to use your saves and settings.".to_string());
+        lines.push(
+            "Extract this zip into your CDDA build directory to use your saves and settings."
+                .to_string(),
+        );
         lines.join("\n")
     });
 
@@ -390,9 +410,7 @@ fn export_sync(
             if entry.file_type().is_file() {
                 let path = entry.path().to_path_buf();
                 // Create relative path from game_dir so extraction preserves structure
-                let relative = path
-                    .strip_prefix(game_dir)
-                    .unwrap_or(&path);
+                let relative = path.strip_prefix(game_dir).unwrap_or(&path);
                 let relative_str = relative.to_string_lossy().replace('\\', "/");
 
                 // Skip debug logs

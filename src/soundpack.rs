@@ -9,7 +9,7 @@
 //!
 //! Soundpack repository loaded via `app_data::soundpacks_repository()`.
 
-use crate::app_data::{game_config, migration_config, soundpacks_repository, RepoSoundpack};
+use crate::app_data::{RepoSoundpack, game_config, migration_config, soundpacks_repository};
 use futures::StreamExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -181,12 +181,13 @@ pub fn parse_soundpack_txt(soundpack_dir: &Path) -> Option<(String, String, bool
                 }
             }
         } else if line.starts_with("VIEW")
-            && let Some(rest) = line.strip_prefix("VIEW") {
-                let value = rest.trim().to_string();
-                if !value.is_empty() {
-                    view = Some(value);
-                }
+            && let Some(rest) = line.strip_prefix("VIEW")
+        {
+            let value = rest.trim().to_string();
+            if !value.is_empty() {
+                view = Some(value);
             }
+        }
 
         // Stop early if we found both
         if name.is_some() && view.is_some() {
@@ -234,16 +235,17 @@ pub async fn list_installed_soundpacks(
         let entries = std::fs::read_dir(&sound_dir_owned)?;
         for entry in entries.flatten() {
             if entry.path().is_dir()
-                && let Some((name, view_name, enabled)) = parse_soundpack_txt(&entry.path()) {
-                    let size = calculate_dir_size(&entry.path());
-                    soundpacks.push(InstalledSoundpack {
-                        name,
-                        view_name,
-                        path: entry.path(),
-                        enabled,
-                        size,
-                    });
-                }
+                && let Some((name, view_name, enabled)) = parse_soundpack_txt(&entry.path())
+            {
+                let size = calculate_dir_size(&entry.path());
+                soundpacks.push(InstalledSoundpack {
+                    name,
+                    view_name,
+                    path: entry.path(),
+                    enabled,
+                    size,
+                });
+            }
         }
 
         // Sort by view name
@@ -403,9 +405,9 @@ pub fn find_soundpack_dir(extract_dir: &Path) -> Option<PathBuf> {
         if let Ok(entry) = entry
             && (entry.file_name() == game_cfg.metadata.soundpack_info.as_str()
                 || entry.file_name() == game_cfg.metadata.soundpack_info_disabled.as_str())
-            {
-                return entry.path().parent().map(|p| p.to_path_buf());
-            }
+        {
+            return entry.path().parent().map(|p| p.to_path_buf());
+        }
     }
     None
 }
@@ -512,8 +514,7 @@ pub async fn install_extracted_soundpack(
     game_dir: &Path,
 ) -> Result<InstalledSoundpack, SoundpackError> {
     // Find the actual soundpack directory (may be nested)
-    let soundpack_source =
-        find_soundpack_dir(extract_dir).ok_or(SoundpackError::NoSoundpackTxt)?;
+    let soundpack_source = find_soundpack_dir(extract_dir).ok_or(SoundpackError::NoSoundpackTxt)?;
 
     // Parse metadata
     let (name, view_name, enabled) =

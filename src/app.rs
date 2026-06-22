@@ -26,7 +26,7 @@ use crate::github::GitHubClient;
 use crate::state::{
     BackupState, ReleasesState, SoundpackState, StateEvent, Tab, UiState, UpdateParams, UpdateState,
 };
-use crate::task::{poll_task, PollResult};
+use crate::task::{PollResult, poll_task};
 
 /// Main application state
 pub struct PhoenixApp {
@@ -86,11 +86,11 @@ impl PhoenixApp {
 
         // Try to detect game if directory is configured (fast path - no hash)
         let phase_start = Instant::now();
-        let game_info = config.game.directory.as_ref().and_then(|dir| {
-            game::detect_game_fast(&PathBuf::from(dir))
-                .ok()
-                .flatten()
-        });
+        let game_info = config
+            .game
+            .directory
+            .as_ref()
+            .and_then(|dir| game::detect_game_fast(&PathBuf::from(dir)).ok().flatten());
         if config.game.directory.is_some() {
             tracing::info!(
                 "Game detection (fast) in {:.1}ms",
@@ -187,8 +187,11 @@ impl PhoenixApp {
                 let version_changed = self.game_info.as_ref().map(|g| g.version_display())
                     != Some(info.version_display());
                 if version_changed {
-                    tracing::info!("Version refined to: {} (stable: {})",
-                        info.version_display(), info.is_stable());
+                    tracing::info!(
+                        "Version refined to: {} (stable: {})",
+                        info.version_display(),
+                        info.is_stable()
+                    );
                     self.status_message = format!("Game detected: {}", info.version_display());
                 }
                 self.game_info = Some(info);
@@ -251,11 +254,12 @@ impl PhoenixApp {
 
         // Check DB cache first
         if let Some(ref db) = self.db
-            && let Ok(Some(body)) = db.get_changelog(&tag) {
-                tracing::debug!("Loaded changelog for {} from cache", tag);
-                self.releases.set_stable_release_body(&tag, body);
-                return;
-            }
+            && let Ok(Some(body)) = db.get_changelog(&tag)
+        {
+            tracing::debug!("Loaded changelog for {} from cache", tag);
+            self.releases.set_stable_release_body(&tag, body);
+            return;
+        }
 
         // Not in cache, fetch from GitHub API
         tracing::debug!("Fetching changelog for {} from GitHub", tag);
@@ -394,8 +398,7 @@ impl PhoenixApp {
                 }
             }
         } else {
-            self.status_message =
-                "No game detected - select a valid game directory".to_string();
+            self.status_message = "No game detected - select a valid game directory".to_string();
         }
     }
 
@@ -413,10 +416,10 @@ impl PhoenixApp {
 
     /// Start a manual backup
     pub(crate) fn start_manual_backup(&mut self, game_dir: &std::path::Path) {
-        if let Some(event) = self.backup.start_manual_backup(
-            game_dir,
-            self.config.backups.compression_level,
-        ) {
+        if let Some(event) = self
+            .backup
+            .start_manual_backup(game_dir, self.config.backups.compression_level)
+        {
             self.handle_event(event);
         }
     }

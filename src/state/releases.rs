@@ -7,7 +7,7 @@ use tokio::task::JoinHandle;
 use crate::game::GameInfo;
 use crate::github::{FetchResult, GitHubClient, RateLimitInfo, Release};
 use crate::state::StateEvent;
-use crate::task::{poll_task, PollResult};
+use crate::task::{PollResult, poll_task};
 
 /// Result of a changelog fetch task: the changelog body and an optional title.
 type ChangelogResult = Result<(String, Option<String>)>;
@@ -36,7 +36,6 @@ pub struct ReleasesState {
     /// Whether a changelog is being fetched
     pub changelog_loading: bool,
 }
-
 
 impl ReleasesState {
     /// Get releases for the specified branch
@@ -72,14 +71,15 @@ impl ReleasesState {
         // Installed: build_number like "2025-12-20-2147" stored in released_on
         // Release tag: like "cdda-experimental-2025-12-20-2147"
         if let Some(version_info) = &game_info.version_info
-            && let Some(ref installed_build) = version_info.released_on {
-                // Check if the release tag contains our build number
-                // e.g., "cdda-experimental-2025-12-20-2147" contains "2025-12-20-2147"
-                if selected_release.tag_name.contains(installed_build) {
-                    return false; // Same version
-                }
-                return true; // Different version
+            && let Some(ref installed_build) = version_info.released_on
+        {
+            // Check if the release tag contains our build number
+            // e.g., "cdda-experimental-2025-12-20-2147" contains "2025-12-20-2147"
+            if selected_release.tag_name.contains(installed_build) {
+                return false; // Same version
             }
+            return true; // Different version
+        }
 
         // Fallback: assume different (allow update)
         true
@@ -106,7 +106,10 @@ impl ReleasesState {
             }
         }));
 
-        Some(StateEvent::StatusMessage(format!("Fetching {} releases...", branch)))
+        Some(StateEvent::StatusMessage(format!(
+            "Fetching {} releases...",
+            branch
+        )))
     }
 
     /// Poll the async releases task for completion
@@ -130,7 +133,10 @@ impl ReleasesState {
                 if is_current_branch && count > 0 {
                     self.selected_idx = Some(0);
                 }
-                events.push(StateEvent::StatusMessage(format!("Fetched {} releases", count)));
+                events.push(StateEvent::StatusMessage(format!(
+                    "Fetched {} releases",
+                    count
+                )));
                 events.push(StateEvent::LogInfo(format!(
                     "Fetched {} {} releases from GitHub",
                     count,
@@ -141,7 +147,10 @@ impl ReleasesState {
             PollResult::Complete(Ok(Err(e))) => {
                 self.fetching_branch.take();
                 let msg = e.to_string();
-                events.push(StateEvent::LogError(format!("Failed to fetch releases: {}", msg)));
+                events.push(StateEvent::LogError(format!(
+                    "Failed to fetch releases: {}",
+                    msg
+                )));
                 self.error = Some(msg.clone());
                 events.push(StateEvent::StatusMessage(format!("Error: {}", msg)));
                 self.loading = false;
@@ -193,11 +202,17 @@ impl ReleasesState {
             }
             PollResult::Complete(Ok(Err(e))) => {
                 self.changelog_loading = false;
-                events.push(StateEvent::LogError(format!("Failed to fetch changelog: {}", e)));
+                events.push(StateEvent::LogError(format!(
+                    "Failed to fetch changelog: {}",
+                    e
+                )));
             }
             PollResult::Complete(Err(e)) => {
                 self.changelog_loading = false;
-                events.push(StateEvent::LogError(format!("Changelog task panicked: {}", e)));
+                events.push(StateEvent::LogError(format!(
+                    "Changelog task panicked: {}",
+                    e
+                )));
             }
             PollResult::Pending => ctx.request_repaint(),
             PollResult::NoTask => {}

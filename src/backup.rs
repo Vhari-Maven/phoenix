@@ -191,9 +191,10 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, BackupError> {
 
             // Only process .zip files
             if path.extension().is_some_and(|e| e == "zip")
-                && let Some(info) = read_backup_info(&path) {
-                    backups.push(info);
-                }
+                && let Some(info) = read_backup_info(&path)
+            {
+                backups.push(info);
+            }
         }
 
         // Sort by modified date, newest first
@@ -243,7 +244,12 @@ fn read_backup_info(path: &Path) -> Option<BackupInfo> {
             // CDDA uses .sav.zzip for compressed saves in newer versions
             if parts.len() == 3 {
                 let filename = parts[2];
-                if game_cfg.world.save_extensions.iter().any(|ext| filename.ends_with(ext.as_str())) {
+                if game_cfg
+                    .world
+                    .save_extensions
+                    .iter()
+                    .any(|ext| filename.ends_with(ext.as_str()))
+                {
                     characters_count += 1;
                 }
             }
@@ -433,9 +439,8 @@ fn create_backup_sync(
     });
 
     // Read back the info
-    read_backup_info(&backup_file).ok_or_else(|| {
-        BackupError::CreateFailed("Failed to read created backup info".to_string())
-    })
+    read_backup_info(&backup_file)
+        .ok_or_else(|| BackupError::CreateFailed("Failed to read created backup info".to_string()))
 }
 
 /// Delete a backup
@@ -477,18 +482,21 @@ pub async fn restore_backup(
             let pre_restore_name = generate_unique_name(&backup_path, "before_last_restore");
             tracing::info!("Backing up current saves as: {}", pre_restore_name);
 
-            create_backup(game_dir, &pre_restore_name, compression_level, progress_tx.clone())
-                .await?;
+            create_backup(
+                game_dir,
+                &pre_restore_name,
+                compression_level,
+                progress_tx.clone(),
+            )
+            .await?;
         }
     }
 
     let game_dir = game_dir.to_path_buf();
 
-    tokio::task::spawn_blocking(move || {
-        restore_backup_sync(&game_dir, &backup_file, progress_tx)
-    })
-    .await
-    .map_err(|_| BackupError::Cancelled)?
+    tokio::task::spawn_blocking(move || restore_backup_sync(&game_dir, &backup_file, progress_tx))
+        .await
+        .map_err(|_| BackupError::Cancelled)?
 }
 
 /// Synchronous backup restoration (runs in spawn_blocking)
@@ -612,7 +620,11 @@ pub async fn create_auto_backup(
     fs::create_dir_all(&backup_path)?;
 
     let base_name = if let Some(tag) = version_tag {
-        format!("{}_{}", backup_type.prefix(), tag.replace(['/', '\\', ':'], "_"))
+        format!(
+            "{}_{}",
+            backup_type.prefix(),
+            tag.replace(['/', '\\', ':'], "_")
+        )
     } else {
         backup_type.prefix().to_string()
     };

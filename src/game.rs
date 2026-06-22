@@ -44,9 +44,7 @@ impl GameInfo {
 
     /// Check if this is a stable release
     pub fn is_stable(&self) -> bool {
-        self.version_info
-            .as_ref()
-            .is_some_and(|v| v.stable)
+        self.version_info.as_ref().is_some_and(|v| v.stable)
     }
 }
 
@@ -58,7 +56,9 @@ pub fn detect_game_fast(directory: &Path) -> Result<Option<GameInfo>> {
     let config = game_config();
 
     // Look for game executable
-    let executable = config.executables.names()
+    let executable = config
+        .executables
+        .names()
         .iter()
         .map(|name| directory.join(name))
         .find(|path| path.exists());
@@ -152,20 +152,25 @@ fn get_or_calculate_sha256(executable: &Path, db: Option<&Database>) -> Result<S
 
     // Try to get from cache
     if let Some(db) = db
-        && let Ok(Some(cached_hash)) = db.get_cached_hash(&path_str, size, mtime) {
-            tracing::debug!("Using cached SHA256 for {}", executable.display());
-            return Ok(cached_hash);
-        }
+        && let Ok(Some(cached_hash)) = db.get_cached_hash(&path_str, size, mtime)
+    {
+        tracing::debug!("Using cached SHA256 for {}", executable.display());
+        return Ok(cached_hash);
+    }
 
     // Calculate hash (slow)
-    tracing::debug!("Calculating SHA256 for {} (not cached)", executable.display());
+    tracing::debug!(
+        "Calculating SHA256 for {} (not cached)",
+        executable.display()
+    );
     let sha256 = calculate_sha256(executable)?;
 
     // Store in cache for next time
     if let Some(db) = db
-        && let Err(e) = db.store_cached_hash(&path_str, size, mtime, &sha256) {
-            tracing::warn!("Failed to cache SHA256: {}", e);
-        }
+        && let Err(e) = db.store_cached_hash(&path_str, size, mtime, &sha256)
+    {
+        tracing::warn!("Failed to cache SHA256: {}", e);
+    }
 
     Ok(sha256)
 }
@@ -209,7 +214,11 @@ fn read_version_txt(directory: &Path, config: &crate::app_data::GameConfig) -> O
         // Extract just the date part (first 10 characters: YYYY-MM-DD)
         // Check if it looks like a date by verifying dash positions
         let has_date_format = bn.len() >= config.version.min_build_number_length
-            && config.version.date_dash_positions.iter().all(|&pos| bn.chars().nth(pos) == Some('-'));
+            && config
+                .version
+                .date_dash_positions
+                .iter()
+                .all(|&pos| bn.chars().nth(pos) == Some('-'));
         if has_date_format {
             Some(bn[..10].to_string())
         } else {
@@ -269,7 +278,9 @@ pub fn launch_game(executable: &Path, params: &str) -> Result<()> {
     use std::process::Command;
 
     // Set working directory to game directory
-    let working_dir = executable.parent().context("Executable has no parent directory")?;
+    let working_dir = executable
+        .parent()
+        .context("Executable has no parent directory")?;
 
     // Resolve the actual binary/script to spawn (platform-specific).
     let target = resolve_launch_target(executable, working_dir);

@@ -7,7 +7,9 @@ use clap::Subcommand;
 use serde::Serialize;
 use tokio::sync::watch;
 
-use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
+use crate::cli::output::{
+    OutputFormat, print_error, print_formatted, print_success, should_show_progress,
+};
 use crate::config::Config;
 use crate::db::Database;
 use crate::game;
@@ -98,13 +100,21 @@ struct ReleasesResult {
 pub async fn run(command: UpdateCommands, format: OutputFormat, quiet: bool) -> Result<()> {
     match command {
         UpdateCommands::Check => check(format).await,
-        UpdateCommands::Releases { limit, branch, tags } => releases(limit, branch, tags, format).await,
-        UpdateCommands::Changelog { tag, no_cache } => changelog(tag, no_cache, format, quiet).await,
+        UpdateCommands::Releases {
+            limit,
+            branch,
+            tags,
+        } => releases(limit, branch, tags, format).await,
+        UpdateCommands::Changelog { tag, no_cache } => {
+            changelog(tag, no_cache, format, quiet).await
+        }
         UpdateCommands::Download { version } => download(version, format, quiet).await,
         UpdateCommands::Install => install(format, quiet).await,
-        UpdateCommands::Apply { keep_saves, remove_old, dry_run } => {
-            apply(keep_saves, remove_old, dry_run, format, quiet).await
-        }
+        UpdateCommands::Apply {
+            keep_saves,
+            remove_old,
+            dry_run,
+        } => apply(keep_saves, remove_old, dry_run, format, quiet).await,
     }
 }
 
@@ -120,7 +130,9 @@ async fn check(format: OutputFormat) -> Result<()> {
     // Detect current version
     let db = Database::open().ok();
     let current_info = game::detect_game_with_db(&game_dir, db.as_ref())?;
-    let current_version = current_info.as_ref().map(|g| g.version_display().to_string());
+    let current_version = current_info
+        .as_ref()
+        .map(|g| g.version_display().to_string());
 
     // Fetch latest release
     let client = GitHubClient::new()?;
@@ -169,7 +181,12 @@ async fn check(format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-async fn releases(limit: usize, branch: Option<String>, tags: Option<String>, format: OutputFormat) -> Result<()> {
+async fn releases(
+    limit: usize,
+    branch: Option<String>,
+    tags: Option<String>,
+    format: OutputFormat,
+) -> Result<()> {
     let config = Config::load()?;
     let branch = branch.unwrap_or_else(|| config.game.branch.clone());
 
@@ -251,13 +268,14 @@ async fn changelog(tag: String, no_cache: bool, format: OutputFormat, quiet: boo
     // Check DB cache first (unless --no-cache)
     if !no_cache
         && let Some(ref db) = db
-            && let Ok(Some(cached_body)) = db.get_changelog(&tag) {
-                if !quiet {
-                    eprintln!("Found changelog in cache");
-                }
-                source = "cache";
-                body = Some(cached_body);
-            }
+        && let Ok(Some(cached_body)) = db.get_changelog(&tag)
+    {
+        if !quiet {
+            eprintln!("Found changelog in cache");
+        }
+        source = "cache";
+        body = Some(cached_body);
+    }
 
     // Fetch from GitHub API if not in cache
     if body.is_none() {
@@ -287,14 +305,9 @@ async fn changelog(tag: String, no_cache: bool, format: OutputFormat, quiet: boo
         body: body.clone(),
     };
 
-    print_formatted(&result, format, |r| {
-        match &r.body {
-            Some(text) => format!(
-                "Changelog for {} (from {}):\n\n{}",
-                r.tag, r.source, text
-            ),
-            None => format!("No changelog found for {}", r.tag),
-        }
+    print_formatted(&result, format, |r| match &r.body {
+        Some(text) => format!("Changelog for {} (from {}):\n\n{}", r.tag, r.source, text),
+        None => format!("No changelog found for {}", r.tag),
     });
 
     Ok(())
@@ -484,8 +497,14 @@ async fn apply(
         println!("Dry run - would apply update:");
         println!("  Version: {}", release.tag_name);
         println!("  Size: {}", format_size(asset.size));
-        println!("  Keep saves in place: {}", keep_saves || config.updates.prevent_save_move);
-        println!("  Remove old version: {}", remove_old || config.updates.remove_previous_version);
+        println!(
+            "  Keep saves in place: {}",
+            keep_saves || config.updates.prevent_save_move
+        );
+        println!(
+            "  Remove old version: {}",
+            remove_old || config.updates.remove_previous_version
+        );
         return Ok(());
     }
 
@@ -549,8 +568,14 @@ async fn apply(
     let prevent_save_move = keep_saves || config.updates.prevent_save_move;
     let remove_previous = remove_old || config.updates.remove_previous_version;
 
-    update::install_update(zip_path, game_dir, progress_tx, prevent_save_move, remove_previous)
-        .await?;
+    update::install_update(
+        zip_path,
+        game_dir,
+        progress_tx,
+        prevent_save_move,
+        remove_previous,
+    )
+    .await?;
 
     print_success(
         &format!("Update complete! Now running: {}", release.tag_name),

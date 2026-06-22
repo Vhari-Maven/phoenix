@@ -8,7 +8,9 @@ use serde::Serialize;
 use tokio::sync::watch;
 
 use crate::backup::{self, BackupInfo, BackupProgress};
-use crate::cli::output::{print_error, print_formatted, print_success, should_show_progress, OutputFormat};
+use crate::cli::output::{
+    OutputFormat, print_error, print_formatted, print_success, should_show_progress,
+};
 use crate::config::Config;
 use crate::util::format_size;
 
@@ -98,10 +100,14 @@ struct BackupVerifyResult {
 pub async fn run(command: BackupCommands, format: OutputFormat, quiet: bool) -> Result<()> {
     match command {
         BackupCommands::List => list(format).await,
-        BackupCommands::Create { name, compression } => create(name, compression, format, quiet).await,
-        BackupCommands::Restore { name, no_safety_backup, dry_run } => {
-            restore(&name, !no_safety_backup, dry_run, format, quiet).await
+        BackupCommands::Create { name, compression } => {
+            create(name, compression, format, quiet).await
         }
+        BackupCommands::Restore {
+            name,
+            no_safety_backup,
+            dry_run,
+        } => restore(&name, !no_safety_backup, dry_run, format, quiet).await,
         BackupCommands::Delete { name, keep } => delete(name, keep, quiet).await,
         BackupCommands::Verify { name } => verify(&name, format).await,
     }
@@ -169,7 +175,12 @@ fn format_backup_list(result: &BackupListResult) -> String {
     lines.join("\n")
 }
 
-async fn create(name: Option<String>, compression: u8, format: OutputFormat, quiet: bool) -> Result<()> {
+async fn create(
+    name: Option<String>,
+    compression: u8,
+    format: OutputFormat,
+    quiet: bool,
+) -> Result<()> {
     let config = Config::load()?;
     let game_dir = config
         .game

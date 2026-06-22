@@ -8,7 +8,7 @@ use std::time::Instant;
 use tokio::sync::watch;
 
 use crate::app_data::{game_config, migration_config};
-use crate::migration::{self, config_skip_files, MigrationPlan};
+use crate::migration::{self, MigrationPlan, config_skip_files};
 
 use super::access::check_installation_access;
 use super::{UpdatePhase, UpdateProgress};
@@ -149,10 +149,9 @@ pub async fn install_update(
     });
 
     // Optional cleanup of current archive directory
-    if remove_previous_version
-        && let Err(e) = tokio::fs::remove_dir_all(&archive_dir).await {
-            tracing::warn!("Failed to remove installation archive: {}", e);
-        }
+    if remove_previous_version && let Err(e) = tokio::fs::remove_dir_all(&archive_dir).await {
+        tracing::warn!("Failed to remove installation archive: {}", e);
+    }
 
     // Complete
     let _ = progress_tx.send(UpdateProgress {
@@ -271,9 +270,8 @@ async fn extract_archive(
 /// components. Absolute or rooted paths are rejected because `Path::join`
 /// discards the base when given one, letting an entry escape the destination.
 fn is_safe_relative(path: &Path) -> bool {
-    path.components().all(|c| {
-        matches!(c, Component::Normal(_) | Component::CurDir)
-    })
+    path.components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
 /// Extract a gzip-compressed tarball to the destination directory.
@@ -299,8 +297,7 @@ async fn extract_tar_gz(
         // Pass 1: count entries and detect a wrapper directory shared by all
         // entries (so we only strip it when it genuinely wraps everything).
         let (total, strip_prefix) = {
-            let file =
-                std::fs::File::open(&archive_path).context("Failed to open tar.gz file")?;
+            let file = std::fs::File::open(&archive_path).context("Failed to open tar.gz file")?;
             let mut archive = tar::Archive::new(GzDecoder::new(file));
 
             let mut total = 0usize;
@@ -356,7 +353,10 @@ async fn extract_tar_gz(
             .enumerate()
         {
             let mut entry = entry.context("Failed to read tar entry")?;
-            let entry_path = entry.path().context("Invalid path in tar entry")?.into_owned();
+            let entry_path = entry
+                .path()
+                .context("Invalid path in tar entry")?
+                .into_owned();
 
             // Strip the common wrapper directory, if any.
             let relative = match &strip_prefix {
@@ -403,11 +403,11 @@ async fn extract_tar_gz(
 
             // Ensure the parent directory exists before unpacking.
             if let Some(parent) = outpath.parent()
-                && !parent.exists() {
-                    std::fs::create_dir_all(parent).with_context(|| {
-                        format!("Failed to create parent directory {:?}", parent)
-                    })?;
-                }
+                && !parent.exists()
+            {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("Failed to create parent directory {:?}", parent))?;
+            }
 
             entry
                 .unpack(&outpath)
@@ -473,11 +473,12 @@ async fn extract_zip(
             } else {
                 // Ensure parent directory exists
                 if let Some(parent) = outpath.parent()
-                    && !parent.exists() {
-                        std::fs::create_dir_all(parent).with_context(|| {
-                            format!("Failed to create parent directory {:?}", parent)
-                        })?;
-                    }
+                    && !parent.exists()
+                {
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create parent directory {:?}", parent)
+                    })?;
+                }
 
                 // Extract file
                 let mut outfile = std::fs::File::create(&outpath)
@@ -954,12 +955,14 @@ mod tests {
         assert!(archive_dir.join("save").join("test_world.sav").exists());
         assert!(archive_dir.join("config").join("options.json").exists());
         assert!(archive_dir.join("config").join("debug.log").exists());
-        assert!(archive_dir
-            .join("data")
-            .join("mods")
-            .join("my_custom_mod")
-            .join("modinfo.json")
-            .exists());
+        assert!(
+            archive_dir
+                .join("data")
+                .join("mods")
+                .join("my_custom_mod")
+                .join("modinfo.json")
+                .exists()
+        );
 
         // Verify original files are moved (not copied)
         assert!(!game_dir.join("cataclysm-tiles.exe").exists());
@@ -992,12 +995,14 @@ mod tests {
         assert!(!game_dir.join("config").join("debug.log").exists());
 
         // Verify custom mod is restored
-        assert!(game_dir
-            .join("data")
-            .join("mods")
-            .join("my_custom_mod")
-            .join("modinfo.json")
-            .exists());
+        assert!(
+            game_dir
+                .join("data")
+                .join("mods")
+                .join("my_custom_mod")
+                .join("modinfo.json")
+                .exists()
+        );
 
         // Verify archive still exists (for rollback)
         assert!(archive_dir.join("save").join("test_world.sav").exists());
@@ -1055,8 +1060,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_tar_gz_strips_wrapper_and_preserves_mode() {
-        use flate2::write::GzEncoder;
         use flate2::Compression;
+        use flate2::write::GzEncoder;
 
         let temp_dir = TempDir::new().unwrap();
         let archive_path = temp_dir.path().join("release.tar.gz");
@@ -1110,7 +1115,10 @@ mod tests {
         // Wrapper directory should be stripped: files land directly in dest.
         let exe_path = dest.join("cataclysm-tiles");
         let data_path = dest.join("data").join("json").join("test.json");
-        assert!(exe_path.exists(), "binary should be extracted without wrapper dir");
+        assert!(
+            exe_path.exists(),
+            "binary should be extracted without wrapper dir"
+        );
         assert!(data_path.exists(), "nested data file should be extracted");
         assert!(
             !dest.join("cataclysmdda-0.J").exists(),

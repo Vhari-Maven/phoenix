@@ -3,9 +3,9 @@
 use eframe::egui::{self, RichText};
 use std::path::{Path, PathBuf};
 
+use super::theme::Theme;
 use crate::app::PhoenixApp;
 use crate::backup::BackupPhase;
-use super::theme::Theme;
 use crate::ui::components::{progress_frame, render_current_file, render_file_progress};
 
 /// Render the backups tab
@@ -70,10 +70,11 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
 
             // Show validation error
             if !app.backup.name_input.is_empty()
-                && let Err(e) = app.validate_backup_name(&app.backup.name_input) {
-                    ui.add_space(4.0);
-                    ui.label(RichText::new(e).color(theme.error).size(11.0));
-                }
+                && let Err(e) = app.validate_backup_name(&app.backup.name_input)
+            {
+                ui.add_space(4.0);
+                ui.label(RichText::new(e).color(theme.error).size(11.0));
+            }
         });
 
     ui.add_space(12.0);
@@ -187,7 +188,9 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                     if ui
                                         .selectable_label(
                                             is_selected,
-                                            RichText::new(&display_name).color(text_color).size(12.0),
+                                            RichText::new(&display_name)
+                                                .color(text_color)
+                                                .size(12.0),
                                         )
                                         .clicked()
                                     {
@@ -222,9 +225,12 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
                                             .size(12.0),
                                     );
                                     ui.label(
-                                        RichText::new(format!("{:.0}%", backup.compression_ratio()))
-                                            .color(text_color)
-                                            .size(12.0),
+                                        RichText::new(format!(
+                                            "{:.0}%",
+                                            backup.compression_ratio()
+                                        ))
+                                        .color(text_color)
+                                        .size(12.0),
                                     );
                                     ui.end_row();
                                 }
@@ -359,41 +365,41 @@ fn render_backup_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme) {
     let progress = &app.backup.progress;
 
     progress_frame(theme).show(ui, |ui| {
-            ui.set_width(ui.available_width());
+        ui.set_width(ui.available_width());
 
-            // Phase label
-            let (phase_text, phase_color) = match progress.phase {
-                BackupPhase::Scanning => ("Scanning files...", theme.accent),
-                BackupPhase::Compressing => ("Compressing saves...", theme.accent),
-                BackupPhase::Extracting => ("Extracting backup...", theme.accent),
-                BackupPhase::Cleaning => ("Cleaning up...", theme.warning),
-                BackupPhase::Complete => ("Backup operation complete!", theme.success),
-                BackupPhase::Failed => ("Operation failed", theme.error),
-                BackupPhase::Idle => ("Ready", theme.text_muted),
-            };
+        // Phase label
+        let (phase_text, phase_color) = match progress.phase {
+            BackupPhase::Scanning => ("Scanning files...", theme.accent),
+            BackupPhase::Compressing => ("Compressing saves...", theme.accent),
+            BackupPhase::Extracting => ("Extracting backup...", theme.accent),
+            BackupPhase::Cleaning => ("Cleaning up...", theme.warning),
+            BackupPhase::Complete => ("Backup operation complete!", theme.success),
+            BackupPhase::Failed => ("Operation failed", theme.error),
+            BackupPhase::Idle => ("Ready", theme.text_muted),
+        };
 
-            ui.label(
-                RichText::new(phase_text)
-                    .color(phase_color)
-                    .size(13.0)
-                    .strong(),
-            );
-            ui.add_space(8.0);
+        ui.label(
+            RichText::new(phase_text)
+                .color(phase_color)
+                .size(13.0)
+                .strong(),
+        );
+        ui.add_space(8.0);
 
-            // Progress bar for compress/extract phases
-            match progress.phase {
-                BackupPhase::Compressing | BackupPhase::Extracting => {
-                    let fraction = progress.fraction();
-                    ui.add(egui::ProgressBar::new(fraction).show_percentage());
+        // Progress bar for compress/extract phases
+        match progress.phase {
+            BackupPhase::Compressing | BackupPhase::Extracting => {
+                let fraction = progress.fraction();
+                ui.add(egui::ProgressBar::new(fraction).show_percentage());
 
-                    ui.add_space(4.0);
-                    render_file_progress(ui, progress.files_processed, progress.total_files, theme);
-                    render_current_file(ui, &progress.current_file, theme);
-                }
-                BackupPhase::Scanning | BackupPhase::Cleaning => {
-                    ui.add(egui::ProgressBar::new(0.0).animate(true));
-                }
-                _ => {}
+                ui.add_space(4.0);
+                render_file_progress(ui, progress.files_processed, progress.total_files, theme);
+                render_current_file(ui, &progress.current_file, theme);
             }
-        });
+            BackupPhase::Scanning | BackupPhase::Cleaning => {
+                ui.add(egui::ProgressBar::new(0.0).animate(true));
+            }
+            _ => {}
+        }
+    });
 }

@@ -103,24 +103,26 @@ pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
     // Try as single object
     if let Some(obj) = json.as_object()
         && obj.get("type").and_then(|v| v.as_str()) == Some("MOD_INFO")
-            && let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
-                return Some(ModInfo {
-                    id: id.to_string(),
-                    path: mod_dir.to_path_buf(),
-                });
-            }
+        && let Some(id) = obj.get("id").and_then(|v| v.as_str())
+    {
+        return Some(ModInfo {
+            id: id.to_string(),
+            path: mod_dir.to_path_buf(),
+        });
+    }
 
     // Try as array - find first MOD_INFO entry
     if let Some(arr) = json.as_array() {
         for item in arr {
             if let Some(obj) = item.as_object()
                 && obj.get("type").and_then(|v| v.as_str()) == Some("MOD_INFO")
-                    && let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
-                        return Some(ModInfo {
-                            id: id.to_string(),
-                            path: mod_dir.to_path_buf(),
-                        });
-                    }
+                && let Some(id) = obj.get("id").and_then(|v| v.as_str())
+            {
+                return Some(ModInfo {
+                    id: id.to_string(),
+                    path: mod_dir.to_path_buf(),
+                });
+            }
         }
     }
 
@@ -200,10 +202,11 @@ pub fn scan_mods_directory(mods_dir: &Path) -> HashMap<String, ModInfo> {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.is_dir()
-                && let Some(mod_info) = parse_mod_ident(&path) {
-                    // Only insert first occurrence (like Python does)
-                    mods.entry(mod_info.id.clone()).or_insert(mod_info);
-                }
+                && let Some(mod_info) = parse_mod_ident(&path)
+            {
+                // Only insert first occurrence (like Python does)
+                mods.entry(mod_info.id.clone()).or_insert(mod_info);
+            }
         }
     }
 
@@ -222,11 +225,12 @@ pub fn scan_tilesets_directory(gfx_dir: &Path) -> HashMap<String, TilesetInfo> {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.is_dir()
-                && let Some(tileset_info) = parse_tileset_info(&path) {
-                    tilesets
-                        .entry(tileset_info.name.clone())
-                        .or_insert(tileset_info);
-                }
+                && let Some(tileset_info) = parse_tileset_info(&path)
+            {
+                tilesets
+                    .entry(tileset_info.name.clone())
+                    .or_insert(tileset_info);
+            }
         }
     }
 
@@ -245,11 +249,12 @@ pub fn scan_soundpacks_directory(sound_dir: &Path) -> HashMap<String, SoundpackI
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.is_dir()
-                && let Some(soundpack_info) = parse_soundpack_info(&path) {
-                    soundpacks
-                        .entry(soundpack_info.name.clone())
-                        .or_insert(soundpack_info);
-                }
+                && let Some(soundpack_info) = parse_soundpack_info(&path)
+            {
+                soundpacks
+                    .entry(soundpack_info.name.clone())
+                    .or_insert(soundpack_info);
+            }
         }
     }
 
@@ -330,14 +335,16 @@ fn scan_soundpack_files_recursive(
         if path.is_dir() {
             scan_soundpack_files_recursive(base_dir, &path, files, content_extensions);
         } else if path.is_file()
-            && let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                let ext_lower = ext.to_lowercase();
-                // Only track files with configured extensions (audio and JSON)
-                if content_extensions.iter().any(|e| e == &ext_lower)
-                    && let Ok(relative) = path.strip_prefix(base_dir) {
-                        files.insert(relative.to_path_buf());
-                    }
+            && let Some(ext) = path.extension().and_then(|e| e.to_str())
+        {
+            let ext_lower = ext.to_lowercase();
+            // Only track files with configured extensions (audio and JSON)
+            if content_extensions.iter().any(|e| e == &ext_lower)
+                && let Ok(relative) = path.strip_prefix(base_dir)
+            {
+                files.insert(relative.to_path_buf());
             }
+        }
     }
 }
 
@@ -488,7 +495,8 @@ pub fn create_migration_plan(previous_version_dir: &Path, game_dir: &Path) -> Mi
 
     let old_data_fonts = scan_fonts_directory(&old_data_font_dir);
     let new_data_fonts = scan_fonts_directory(&new_data_font_dir);
-    plan.custom_data_fonts = find_custom_fonts(&old_data_fonts, &new_data_fonts, &old_data_font_dir);
+    plan.custom_data_fonts =
+        find_custom_fonts(&old_data_fonts, &new_data_fonts, &old_data_font_dir);
 
     if !plan.custom_data_fonts.is_empty() {
         tracing::info!("Found {} custom data fonts", plan.custom_data_fonts.len());
@@ -534,7 +542,8 @@ mod tests {
         let mod_dir = temp_dir.path().join("test_mod");
         fs::create_dir(&mod_dir).unwrap();
 
-        let modinfo = r#"[{"type": "MOD_INFO", "id": "array_mod_id"}, {"type": "ITEM", "id": "item1"}]"#;
+        let modinfo =
+            r#"[{"type": "MOD_INFO", "id": "array_mod_id"}, {"type": "ITEM", "id": "item1"}]"#;
         fs::write(mod_dir.join("modinfo.json"), modinfo).unwrap();
 
         let result = parse_mod_ident(&mod_dir);

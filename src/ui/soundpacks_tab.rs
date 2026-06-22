@@ -3,9 +3,9 @@
 use eframe::egui::{self, RichText};
 use std::path::{Path, PathBuf};
 
+use super::theme::Theme;
 use crate::app::PhoenixApp;
 use crate::soundpack::{self, SoundpackError, SoundpackPhase};
-use super::theme::Theme;
 use crate::ui::components::{progress_frame, render_current_file};
 use crate::util::format_size;
 
@@ -159,12 +159,17 @@ fn render_installed_soundpacks_panel(
             ui.horizontal(|ui| {
                 let has_selection = app.soundpack.installed_idx.is_some();
                 let selected_enabled = app
-                    .soundpack.installed_idx
+                    .soundpack
+                    .installed_idx
                     .and_then(|i| app.soundpack.list.get(i))
                     .map(|s| s.enabled)
                     .unwrap_or(false);
 
-                let toggle_text = if selected_enabled { "Disable" } else { "Enable" };
+                let toggle_text = if selected_enabled {
+                    "Disable"
+                } else {
+                    "Enable"
+                };
 
                 if ui
                     .add_enabled(
@@ -173,22 +178,21 @@ fn render_installed_soundpacks_panel(
                     )
                     .clicked()
                     && let Some(idx) = app.soundpack.installed_idx
-                        && let Some(soundpack) = app.soundpack.list.get(idx) {
-                            let path = soundpack.path.clone();
-                            let new_enabled = !soundpack.enabled;
-                            let game_dir = game_dir.to_path_buf();
+                    && let Some(soundpack) = app.soundpack.list.get(idx)
+                {
+                    let path = soundpack.path.clone();
+                    let new_enabled = !soundpack.enabled;
+                    let game_dir = game_dir.to_path_buf();
 
-                            tokio::spawn(async move {
-                                if let Err(e) =
-                                    soundpack::set_soundpack_enabled(&path, new_enabled).await
-                                {
-                                    tracing::error!("Failed to toggle soundpack: {}", e);
-                                }
-                            });
-
-                            // Refresh the list after a short delay
-                            app.refresh_soundpack_list(&game_dir);
+                    tokio::spawn(async move {
+                        if let Err(e) = soundpack::set_soundpack_enabled(&path, new_enabled).await {
+                            tracing::error!("Failed to toggle soundpack: {}", e);
                         }
+                    });
+
+                    // Refresh the list after a short delay
+                    app.refresh_soundpack_list(&game_dir);
+                }
 
                 if ui
                     .add_enabled(
@@ -232,8 +236,10 @@ fn render_repository_soundpacks_panel(
                 .show(ui, |ui| {
                     for (idx, repo_soundpack) in app.soundpack.repository.iter().enumerate() {
                         let is_selected = app.soundpack.repo_idx == Some(idx);
-                        let is_installed =
-                            soundpack::is_soundpack_installed(&app.soundpack.list, &repo_soundpack.name);
+                        let is_installed = soundpack::is_soundpack_installed(
+                            &app.soundpack.list,
+                            &repo_soundpack.name,
+                        );
 
                         let display_name = if is_installed {
                             format!("{} ✓", repo_soundpack.viewname)
@@ -265,7 +271,8 @@ fn render_repository_soundpacks_panel(
             ui.horizontal(|ui| {
                 let has_selection = app.soundpack.repo_idx.is_some();
                 let selected_installed = app
-                    .soundpack.repo_idx
+                    .soundpack
+                    .repo_idx
                     .and_then(|i| app.soundpack.repository.get(i))
                     .map(|r| soundpack::is_soundpack_installed(&app.soundpack.list, &r.name))
                     .unwrap_or(false);
@@ -279,9 +286,10 @@ fn render_repository_soundpacks_panel(
                     )
                     .clicked()
                     && let Some(idx) = app.soundpack.repo_idx
-                        && let Some(repo_soundpack) = app.soundpack.repository.get(idx) {
-                            app.install_soundpack(repo_soundpack.clone(), game_dir);
-                        }
+                    && let Some(repo_soundpack) = app.soundpack.repository.get(idx)
+                {
+                    app.install_soundpack(repo_soundpack.clone(), game_dir);
+                }
             });
         });
 }
@@ -323,13 +331,16 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Size:").color(theme.text_muted));
                         ui.label(
-                            RichText::new(format_size(soundpack.size))
-                                .color(theme.text_primary),
+                            RichText::new(format_size(soundpack.size)).color(theme.text_primary),
                         );
                     });
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Status:").color(theme.text_muted));
-                        let status = if soundpack.enabled { "Enabled" } else { "Disabled" };
+                        let status = if soundpack.enabled {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        };
                         let color = if soundpack.enabled {
                             theme.success
                         } else {
@@ -355,9 +366,7 @@ fn render_soundpack_details_panel(app: &PhoenixApp, ui: &mut egui::Ui, theme: &T
                     if let Some(size) = repo.size {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Size:").color(theme.text_muted));
-                            ui.label(
-                                RichText::new(format_size(size)).color(theme.text_primary),
-                            );
+                            ui.label(RichText::new(format_size(size)).color(theme.text_primary));
                         });
                     }
                     ui.horizontal(|ui| {
@@ -382,72 +391,69 @@ fn render_soundpack_progress(app: &PhoenixApp, ui: &mut egui::Ui, theme: &Theme)
     let progress = &app.soundpack.progress;
 
     progress_frame(theme).show(ui, |ui| {
-            let status_color = match progress.phase {
-                SoundpackPhase::Complete => theme.success,
-                SoundpackPhase::Failed => theme.error,
-                _ => theme.text_primary,
-            };
+        let status_color = match progress.phase {
+            SoundpackPhase::Complete => theme.success,
+            SoundpackPhase::Failed => theme.error,
+            _ => theme.text_primary,
+        };
 
-            ui.label(RichText::new(progress.phase.description()).color(status_color));
+        ui.label(RichText::new(progress.phase.description()).color(status_color));
 
-            match progress.phase {
-                SoundpackPhase::Downloading => {
-                    ui.add_space(4.0);
-                    let fraction = progress.download_fraction();
+        match progress.phase {
+            SoundpackPhase::Downloading => {
+                ui.add_space(4.0);
+                let fraction = progress.download_fraction();
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .text(format!(
+                            "{} / {} ({}/s)",
+                            format_size(progress.bytes_downloaded),
+                            format_size(progress.total_bytes),
+                            format_size(progress.speed)
+                        ))
+                        .fill(theme.accent),
+                );
+            }
+            SoundpackPhase::Extracting => {
+                ui.add_space(4.0);
+                if progress.total_files > 0 {
+                    let fraction = progress.extract_fraction();
                     ui.add(
                         egui::ProgressBar::new(fraction)
                             .text(format!(
-                                "{} / {} ({}/s)",
-                                format_size(progress.bytes_downloaded),
-                                format_size(progress.total_bytes),
-                                format_size(progress.speed)
+                                "{} / {} files",
+                                progress.files_extracted, progress.total_files
                             ))
                             .fill(theme.accent),
                     );
-                }
-                SoundpackPhase::Extracting => {
-                    ui.add_space(4.0);
-                    if progress.total_files > 0 {
-                        let fraction = progress.extract_fraction();
-                        ui.add(
-                            egui::ProgressBar::new(fraction)
-                                .text(format!(
-                                    "{} / {} files",
-                                    progress.files_extracted, progress.total_files
-                                ))
-                                .fill(theme.accent),
-                        );
-                    } else {
-                        ui.add(
-                            egui::ProgressBar::new(0.5)
-                                .text("Extracting...")
-                                .fill(theme.accent),
-                        );
-                    }
-                    render_current_file(ui, &progress.current_file, theme);
-                }
-                SoundpackPhase::Deleting => {
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                    });
-                }
-                SoundpackPhase::Complete => {
-                    // Description already shown above, just show success bar
-                    ui.add_space(4.0);
+                } else {
                     ui.add(
-                        egui::ProgressBar::new(1.0)
-                            .fill(theme.success),
+                        egui::ProgressBar::new(0.5)
+                            .text("Extracting...")
+                            .fill(theme.accent),
                     );
                 }
-                SoundpackPhase::Failed => {
-                    if let Some(ref err) = progress.error {
-                        ui.label(RichText::new(err).color(theme.error));
-                    }
-                }
-                _ => {}
+                render_current_file(ui, &progress.current_file, theme);
             }
-        });
+            SoundpackPhase::Deleting => {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                });
+            }
+            SoundpackPhase::Complete => {
+                // Description already shown above, just show success bar
+                ui.add_space(4.0);
+                ui.add(egui::ProgressBar::new(1.0).fill(theme.success));
+            }
+            SoundpackPhase::Failed => {
+                if let Some(ref err) = progress.error {
+                    ui.label(RichText::new(err).color(theme.error));
+                }
+            }
+            _ => {}
+        }
+    });
 }
 
 /// Render delete confirmation dialog
@@ -458,7 +464,8 @@ fn render_soundpack_delete_dialog(
     _game_dir: &Path,
 ) {
     let selected_name = app
-        .soundpack.installed_idx
+        .soundpack
+        .installed_idx
         .and_then(|i| app.soundpack.list.get(i))
         .map(|s| s.view_name.clone())
         .unwrap_or_default();
@@ -486,24 +493,25 @@ fn render_soundpack_delete_dialog(
                     .clicked()
                 {
                     if let Some(idx) = app.soundpack.installed_idx
-                        && let Some(soundpack) = app.soundpack.list.get(idx) {
-                            let path = soundpack.path.clone();
+                        && let Some(soundpack) = app.soundpack.list.get(idx)
+                    {
+                        let path = soundpack.path.clone();
 
-                            let task = tokio::spawn(async move {
-                                soundpack::delete_soundpack(path).await?;
-                                // Return a dummy InstalledSoundpack to satisfy the type
-                                Err(SoundpackError::Cancelled) // Will be handled specially
-                            });
+                        let task = tokio::spawn(async move {
+                            soundpack::delete_soundpack(path).await?;
+                            // Return a dummy InstalledSoundpack to satisfy the type
+                            Err(SoundpackError::Cancelled) // Will be handled specially
+                        });
 
-                            app.soundpack.task = Some(task);
-                            app.soundpack.installed_idx = None;
-                            // Show deleting progress
-                            app.soundpack.progress = soundpack::SoundpackProgress {
-                                phase: soundpack::SoundpackPhase::Deleting,
-                                ..Default::default()
-                            };
-                            // Note: refresh_list is called in poll() after delete completes
-                        }
+                        app.soundpack.task = Some(task);
+                        app.soundpack.installed_idx = None;
+                        // Show deleting progress
+                        app.soundpack.progress = soundpack::SoundpackProgress {
+                            phase: soundpack::SoundpackPhase::Deleting,
+                            ..Default::default()
+                        };
+                        // Note: refresh_list is called in poll() after delete completes
+                    }
                     app.soundpack.confirm_delete = false;
                 }
 
@@ -521,7 +529,11 @@ fn render_browser_download_dialog(
     theme: &Theme,
     game_dir: &Path,
 ) {
-    let url = app.soundpack.browser_download_url.clone().unwrap_or_default();
+    let url = app
+        .soundpack
+        .browser_download_url
+        .clone()
+        .unwrap_or_default();
 
     egui::Window::new("Browser Download Required")
         .collapsible(false)
@@ -554,12 +566,12 @@ fn render_browser_download_dialog(
                         .add_filter("Archives", &["zip", "rar", "7z"])
                         .set_title("Select Downloaded Soundpack")
                         .pick_file()
-                    {
-                        // Start installation from file
-                        app.install_soundpack_from_file(path, game_dir);
-                        app.soundpack.browser_download_url = None;
-                        app.soundpack.browser_download_soundpack = None;
-                    }
+                {
+                    // Start installation from file
+                    app.install_soundpack_from_file(path, game_dir);
+                    app.soundpack.browser_download_url = None;
+                    app.soundpack.browser_download_soundpack = None;
+                }
 
                 if ui.button("Cancel").clicked() {
                     app.soundpack.browser_download_url = None;

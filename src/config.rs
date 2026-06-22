@@ -19,8 +19,7 @@ use std::path::PathBuf;
 use crate::ui::theme::ThemePreset;
 
 /// Application configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub launcher: LauncherConfig,
@@ -32,10 +31,8 @@ pub struct Config {
     pub backups: BackupConfig,
 }
 
-
 /// Launcher appearance and behavior settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LauncherConfig {
     /// Theme preset name
     #[serde(default)]
@@ -44,7 +41,6 @@ pub struct LauncherConfig {
     #[serde(default)]
     pub keep_open: bool,
 }
-
 
 /// Game installation settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
