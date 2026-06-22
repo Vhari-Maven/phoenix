@@ -174,7 +174,7 @@ pub async fn install_update(
 ///
 /// This preserves the current game installation in `.phoenix_archive/` so users
 /// can roll back if needed. This is distinct from save backups (compressed archives
-/// of save data managed via the Backups tab, stored in AppData).
+/// of save data managed via the Backups tab, stored in the platform data directory).
 ///
 /// Uses fast rename operations to avoid blocking on deletion:
 /// 1. If old_archive_dir exists, delete it (from a previous failed update)

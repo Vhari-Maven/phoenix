@@ -162,7 +162,7 @@ impl BackupProgress {
     }
 }
 
-/// Get the backup directory (in AppData)
+/// Get the backup directory (in the platform data directory)
 pub fn backup_dir() -> PathBuf {
     Config::backups_dir().expect("Failed to get backups directory")
 }

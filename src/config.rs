@@ -193,7 +193,7 @@ impl Config {
         Ok(data_dir.to_path_buf())
     }
 
-    /// Get the backups directory (in AppData)
+    /// Get the backups directory (in the platform data directory)
     pub fn backups_dir() -> Result<PathBuf> {
         let data_dir = Self::data_dir()?;
         let backups_dir = data_dir.join("backups");

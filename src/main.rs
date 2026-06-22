@@ -69,9 +69,58 @@ fn acquire_single_instance() -> Option<HANDLE> {
     }
 }
 
+/// RAII guard holding the single-instance lock on non-Windows platforms.
+///
+/// The advisory file lock lives as long as the underlying `File` is open, so
+/// holding this guard for the program's lifetime keeps the lock held. The OS
+/// releases the lock automatically when the process exits — even on a crash —
+/// so there is no stale-lock file to clean up.
+///
+/// An inner `None` means we could not establish a lock (e.g. the filesystem
+/// doesn't support locking) but chose to let the app run anyway rather than
+/// block the user.
 #[cfg(not(windows))]
-fn acquire_single_instance() -> Option<()> {
-    Some(()) // No-op on non-Windows platforms
+struct InstanceGuard(#[allow(dead_code)] Option<std::fs::File>);
+
+/// Enforce a single running instance using an advisory lock on a lockfile in
+/// the data directory. This is the cross-platform counterpart to the Windows
+/// named mutex.
+#[cfg(not(windows))]
+fn acquire_single_instance() -> Option<InstanceGuard> {
+    use std::fs::{OpenOptions, TryLockError};
+
+    // Fall back to the temp dir if the data dir can't be determined, so the
+    // lock path is essentially always openable.
+    let lock_path = config::Config::data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("phoenix.lock");
+
+    let file = match OpenOptions::new().create(true).write(true).open(&lock_path) {
+        Ok(file) => file,
+        Err(e) => {
+            tracing::warn!(
+                "Could not create lock file {:?}: {} (single-instance check skipped)",
+                lock_path,
+                e
+            );
+            return Some(InstanceGuard(None));
+        }
+    };
+
+    match file.try_lock() {
+        // We acquired the lock: we're the only instance. Keep the file open.
+        Ok(()) => Some(InstanceGuard(Some(file))),
+        // The lock is held by another process: we're a second instance.
+        Err(TryLockError::WouldBlock) => {
+            tracing::warn!("Another instance of Phoenix is already running");
+            None
+        }
+        // Locking failed for another reason: don't block the user.
+        Err(TryLockError::Error(e)) => {
+            tracing::warn!("File locking unavailable ({}); single-instance check skipped", e);
+            Some(InstanceGuard(Some(file)))
+        }
+    }
 }
 
 /// Check if we should run in CLI mode based on command-line arguments
