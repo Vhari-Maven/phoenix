@@ -16,16 +16,26 @@ egui_commonmark = "0.22"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 
-# HTTP client
-reqwest = { version = "0.12", features = ["json", "stream"] }
+# HTTP client.
+# Use rustls (pure-Rust TLS) with bundled roots instead of the default
+# native-tls backend, so the binary doesn't depend on system OpenSSL.
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "stream",
+    "http2",
+    "charset",
+    "rustls-tls",
+] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
-# Archives: ZIP (Windows releases) and tar.gz (Linux releases)
-zip = "2"
+# Archives: ZIP (Windows releases) and tar.gz (Linux releases).
+# Only Stored + Deflated compression is used; disabling default features
+# drops the bzip2 (libbz2) and zstd runtime dependencies for portability.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
 
