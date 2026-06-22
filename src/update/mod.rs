@@ -103,12 +103,13 @@ mod tests {
 
     #[test]
     fn test_progress_fraction() {
-        let mut progress = UpdateProgress::default();
-
         // Download progress
-        progress.phase = UpdatePhase::Downloading;
-        progress.bytes_downloaded = 50;
-        progress.total_bytes = 100;
+        let mut progress = UpdateProgress {
+            phase: UpdatePhase::Downloading,
+            bytes_downloaded: 50,
+            total_bytes: 100,
+            ..Default::default()
+        };
         assert_eq!(progress.download_fraction(), 0.5);
 
         // Extract progress

@@ -35,20 +35,17 @@ pub fn render_tab(app: &mut PhoenixApp, ui: &mut egui::Ui, tab: Tab, label: &str
         app.ui.active_tab = tab;
 
         // Load backup list when switching to Backups tab
-        if tab == Tab::Backups && previous_tab != Tab::Backups {
-            if app.backup.list.is_empty() && !app.backup.list_loading {
+        if tab == Tab::Backups && previous_tab != Tab::Backups
+            && app.backup.list.is_empty() && !app.backup.list_loading {
                 app.refresh_backup_list();
             }
-        }
 
         // Load soundpack list when switching to Soundpacks tab
-        if tab == Tab::Soundpacks && previous_tab != Tab::Soundpacks {
-            if let Some(ref dir) = app.config.game.directory {
-                if app.soundpack.list.is_empty() && !app.soundpack.list_loading {
+        if tab == Tab::Soundpacks && previous_tab != Tab::Soundpacks
+            && let Some(ref dir) = app.config.game.directory
+                && app.soundpack.list.is_empty() && !app.soundpack.list_loading {
                     app.refresh_soundpack_list(&PathBuf::from(dir));
                 }
-            }
-        }
     }
 }
 
@@ -114,23 +111,19 @@ pub fn render_about_dialog(app: &mut PhoenixApp, ctx: &egui::Context) {
                 );
                 ui.add_space(4.0);
 
-                if let Ok(path) = Config::config_path() {
-                    if let Some(dir) = path.parent() {
-                        if ui.link("Config").clicked() {
+                if let Ok(path) = Config::config_path()
+                    && let Some(dir) = path.parent()
+                        && ui.link("Config").clicked() {
                             let _ = open::that(dir);
                         }
-                    }
-                }
-                if let Ok(path) = Config::backups_dir() {
-                    if ui.link("Backups").clicked() {
+                if let Ok(path) = Config::backups_dir()
+                    && ui.link("Backups").clicked() {
                         let _ = open::that(&path);
                     }
-                }
-                if let Ok(path) = Config::data_dir() {
-                    if ui.link("Data").clicked() {
+                if let Ok(path) = Config::data_dir()
+                    && ui.link("Data").clicked() {
                         let _ = open::that(&path);
                     }
-                }
 
                 ui.add_space(8.0);
 

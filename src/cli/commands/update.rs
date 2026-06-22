@@ -249,17 +249,15 @@ async fn changelog(tag: String, no_cache: bool, format: OutputFormat, quiet: boo
     let mut body: Option<String> = None;
 
     // Check DB cache first (unless --no-cache)
-    if !no_cache {
-        if let Some(ref db) = db {
-            if let Ok(Some(cached_body)) = db.get_changelog(&tag) {
+    if !no_cache
+        && let Some(ref db) = db
+            && let Ok(Some(cached_body)) = db.get_changelog(&tag) {
                 if !quiet {
                     eprintln!("Found changelog in cache");
                 }
                 source = "cache";
                 body = Some(cached_body);
             }
-        }
-    }
 
     // Fetch from GitHub API if not in cache
     if body.is_none() {

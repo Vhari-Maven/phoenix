@@ -95,7 +95,12 @@ fn acquire_single_instance() -> Option<InstanceGuard> {
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("phoenix.lock");
 
-    let file = match OpenOptions::new().create(true).write(true).open(&lock_path) {
+    let file = match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+    {
         Ok(file) => file,
         Err(e) => {
             tracing::warn!(

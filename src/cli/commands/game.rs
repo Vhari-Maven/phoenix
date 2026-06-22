@@ -87,7 +87,7 @@ async fn detect(dir: Option<PathBuf>, format: OutputFormat, quiet: bool) -> Resu
     match result {
         Some(game_info) => {
             let detect_result = build_detect_result(&game_info, &game_dir, &config);
-            print_formatted(&detect_result, format, |r| format_detect_text(r));
+            print_formatted(&detect_result, format, format_detect_text);
         }
         None => {
             let detect_result = DetectResult {
@@ -173,7 +173,7 @@ async fn info(dir: Option<PathBuf>, format: OutputFormat, _quiet: bool) -> Resul
                     .and_then(|v| v.released_on.clone()),
             };
 
-            print_formatted(&info_result, format, |r| format_info_text(r));
+            print_formatted(&info_result, format, format_info_text);
         }
         None => {
             print_error(&format!("No game detected in: {}", game_dir.display()));
@@ -201,7 +201,7 @@ fn get_game_dir(dir: Option<PathBuf>, config: &Config) -> Result<PathBuf> {
         .context("No game directory specified. Use --dir or configure in settings.")
 }
 
-fn build_detect_result(game_info: &GameInfo, game_dir: &PathBuf, _config: &Config) -> DetectResult {
+fn build_detect_result(game_info: &GameInfo, game_dir: &Path, _config: &Config) -> DetectResult {
     DetectResult {
         detected: true,
         version: Some(game_info.version_display().to_string()),

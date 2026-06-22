@@ -27,6 +27,7 @@ pub struct UpdateParams {
 }
 
 /// Update-related state
+#[derive(Default)]
 pub struct UpdateState {
     /// Async task for update operation
     task: Option<JoinHandle<Result<()>>>,
@@ -38,16 +39,6 @@ pub struct UpdateState {
     pub error: Option<String>,
 }
 
-impl Default for UpdateState {
-    fn default() -> Self {
-        Self {
-            task: None,
-            progress_rx: None,
-            progress: UpdateProgress::default(),
-            error: None,
-        }
-    }
-}
 
 impl UpdateState {
     /// Check if an update is currently in progress
@@ -165,14 +156,13 @@ impl UpdateState {
         let mut events = Vec::new();
 
         // Update progress from channel
-        if let Some(rx) = &mut self.progress_rx {
-            if rx.has_changed().unwrap_or(false) {
+        if let Some(rx) = &mut self.progress_rx
+            && rx.has_changed().unwrap_or(false) {
                 self.progress = rx.borrow_and_update().clone();
                 events.push(StateEvent::StatusMessage(
                     self.progress.phase.description().to_string(),
                 ));
             }
-        }
 
         // Check if task is complete
         match poll_task(&mut self.task) {

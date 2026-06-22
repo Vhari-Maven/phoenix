@@ -190,15 +190,14 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, BackupError> {
             let path = entry.path();
 
             // Only process .zip files
-            if path.extension().map_or(false, |e| e == "zip") {
-                if let Some(info) = read_backup_info(&path) {
+            if path.extension().is_some_and(|e| e == "zip")
+                && let Some(info) = read_backup_info(&path) {
                     backups.push(info);
                 }
-            }
         }
 
         // Sort by modified date, newest first
-        backups.sort_by(|a, b| b.modified.cmp(&a.modified));
+        backups.sort_by_key(|b| std::cmp::Reverse(b.modified));
 
         Ok(backups)
     })
@@ -532,7 +531,6 @@ fn restore_backup_sync(
             files_processed: i,
             total_files,
             current_file: name.clone(),
-            ..Default::default()
         });
 
         let out_path = game_dir.join(&name);
@@ -661,7 +659,7 @@ pub async fn enforce_retention(max_count: u32) -> Result<usize, BackupError> {
     }
 
     // Sort by date, oldest first (we'll delete from the front)
-    backups.sort_by(|a, b| a.modified.cmp(&b.modified));
+    backups.sort_by_key(|a| a.modified);
 
     let to_delete = backups.len() - max_count as usize;
     let mut deleted = 0;

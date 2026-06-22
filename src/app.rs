@@ -250,13 +250,12 @@ impl PhoenixApp {
         let tag = release.tag_name.clone();
 
         // Check DB cache first
-        if let Some(ref db) = self.db {
-            if let Ok(Some(body)) = db.get_changelog(&tag) {
+        if let Some(ref db) = self.db
+            && let Ok(Some(body)) = db.get_changelog(&tag) {
                 tracing::debug!("Loaded changelog for {} from cache", tag);
                 self.releases.set_stable_release_body(&tag, body);
                 return;
             }
-        }
 
         // Not in cache, fetch from GitHub API
         tracing::debug!("Fetching changelog for {} from GitHub", tag);

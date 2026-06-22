@@ -20,6 +20,7 @@ use crate::ui::theme::ThemePreset;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     #[serde(default)]
     pub launcher: LauncherConfig,
@@ -31,19 +32,10 @@ pub struct Config {
     pub backups: BackupConfig,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            launcher: LauncherConfig::default(),
-            game: GameConfig::default(),
-            updates: UpdateConfig::default(),
-            backups: BackupConfig::default(),
-        }
-    }
-}
 
 /// Launcher appearance and behavior settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct LauncherConfig {
     /// Theme preset name
     #[serde(default)]
@@ -53,14 +45,6 @@ pub struct LauncherConfig {
     pub keep_open: bool,
 }
 
-impl Default for LauncherConfig {
-    fn default() -> Self {
-        Self {
-            theme: ThemePreset::default(),
-            keep_open: false,
-        }
-    }
-}
 
 /// Game installation settings
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -172,9 +172,8 @@ fn render_installed_soundpacks_panel(
                         egui::Button::new(RichText::new(toggle_text).color(theme.text_primary)),
                     )
                     .clicked()
-                {
-                    if let Some(idx) = app.soundpack.installed_idx {
-                        if let Some(soundpack) = app.soundpack.list.get(idx) {
+                    && let Some(idx) = app.soundpack.installed_idx
+                        && let Some(soundpack) = app.soundpack.list.get(idx) {
                             let path = soundpack.path.clone();
                             let new_enabled = !soundpack.enabled;
                             let game_dir = game_dir.to_path_buf();
@@ -190,8 +189,6 @@ fn render_installed_soundpacks_panel(
                             // Refresh the list after a short delay
                             app.refresh_soundpack_list(&game_dir);
                         }
-                    }
-                }
 
                 if ui
                     .add_enabled(
@@ -281,13 +278,10 @@ fn render_repository_soundpacks_panel(
                         ),
                     )
                     .clicked()
-                {
-                    if let Some(idx) = app.soundpack.repo_idx {
-                        if let Some(repo_soundpack) = app.soundpack.repository.get(idx) {
+                    && let Some(idx) = app.soundpack.repo_idx
+                        && let Some(repo_soundpack) = app.soundpack.repository.get(idx) {
                             app.install_soundpack(repo_soundpack.clone(), game_dir);
                         }
-                    }
-                }
             });
         });
 }
@@ -491,8 +485,8 @@ fn render_soundpack_delete_dialog(
                     .button(RichText::new("Delete").color(theme.error))
                     .clicked()
                 {
-                    if let Some(idx) = app.soundpack.installed_idx {
-                        if let Some(soundpack) = app.soundpack.list.get(idx) {
+                    if let Some(idx) = app.soundpack.installed_idx
+                        && let Some(soundpack) = app.soundpack.list.get(idx) {
                             let path = soundpack.path.clone();
 
                             let task = tokio::spawn(async move {
@@ -510,7 +504,6 @@ fn render_soundpack_delete_dialog(
                             };
                             // Note: refresh_list is called in poll() after delete completes
                         }
-                    }
                     app.soundpack.confirm_delete = false;
                 }
 
@@ -556,8 +549,8 @@ fn render_browser_download_dialog(
 
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.button("Select File...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
+                if ui.button("Select File...").clicked()
+                    && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Archives", &["zip", "rar", "7z"])
                         .set_title("Select Downloaded Soundpack")
                         .pick_file()
@@ -567,7 +560,6 @@ fn render_browser_download_dialog(
                         app.soundpack.browser_download_url = None;
                         app.soundpack.browser_download_soundpack = None;
                     }
-                }
 
                 if ui.button("Cancel").clicked() {
                     app.soundpack.browser_download_url = None;

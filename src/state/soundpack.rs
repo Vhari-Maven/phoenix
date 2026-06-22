@@ -131,12 +131,11 @@ impl SoundpackState {
         let mut events = Vec::new();
 
         // Update progress from receiver
-        if let Some(ref mut rx) = self.progress_rx {
-            if rx.has_changed().unwrap_or(false) {
+        if let Some(ref mut rx) = self.progress_rx
+            && rx.has_changed().unwrap_or(false) {
                 self.progress = rx.borrow_and_update().clone();
                 ctx.request_repaint();
             }
-        }
 
         // Check main soundpack task
         match poll_task(&mut self.task) {
@@ -181,11 +180,10 @@ impl SoundpackState {
                 self.list_loading = false;
                 self.list = list;
                 // Preserve selection if still valid
-                if let Some(idx) = self.installed_idx {
-                    if idx >= self.list.len() {
+                if let Some(idx) = self.installed_idx
+                    && idx >= self.list.len() {
                         self.installed_idx = None;
                     }
-                }
             }
             PollResult::Complete(Ok(Err(e))) => {
                 self.list_loading = false;

@@ -69,12 +69,11 @@ pub fn render_backups_tab(app: &mut PhoenixApp, ui: &mut egui::Ui) {
             });
 
             // Show validation error
-            if !app.backup.name_input.is_empty() {
-                if let Err(e) = app.validate_backup_name(&app.backup.name_input) {
+            if !app.backup.name_input.is_empty()
+                && let Err(e) = app.validate_backup_name(&app.backup.name_input) {
                     ui.add_space(4.0);
                     ui.label(RichText::new(e).color(theme.error).size(11.0));
                 }
-            }
         });
 
     ui.add_space(12.0);

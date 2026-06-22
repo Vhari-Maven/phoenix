@@ -151,23 +151,21 @@ fn get_or_calculate_sha256(executable: &Path, db: Option<&Database>) -> Result<S
     let (size, mtime) = get_file_metadata(executable)?;
 
     // Try to get from cache
-    if let Some(db) = db {
-        if let Ok(Some(cached_hash)) = db.get_cached_hash(&path_str, size, mtime) {
+    if let Some(db) = db
+        && let Ok(Some(cached_hash)) = db.get_cached_hash(&path_str, size, mtime) {
             tracing::debug!("Using cached SHA256 for {}", executable.display());
             return Ok(cached_hash);
         }
-    }
 
     // Calculate hash (slow)
     tracing::debug!("Calculating SHA256 for {} (not cached)", executable.display());
     let sha256 = calculate_sha256(executable)?;
 
     // Store in cache for next time
-    if let Some(db) = db {
-        if let Err(e) = db.store_cached_hash(&path_str, size, mtime, &sha256) {
+    if let Some(db) = db
+        && let Err(e) = db.store_cached_hash(&path_str, size, mtime, &sha256) {
             tracing::warn!("Failed to cache SHA256: {}", e);
         }
-    }
 
     Ok(sha256)
 }

@@ -11,6 +11,7 @@ use crate::state::StateEvent;
 use crate::task::{poll_task, PollResult};
 
 /// Backup-related state
+#[derive(Default)]
 pub struct BackupState {
     /// List of available backups
     pub list: Vec<BackupInfo>,
@@ -36,23 +37,6 @@ pub struct BackupState {
     pub confirm_restore: bool,
 }
 
-impl Default for BackupState {
-    fn default() -> Self {
-        Self {
-            list: Vec::new(),
-            list_loading: false,
-            selected_idx: None,
-            name_input: String::new(),
-            task: None,
-            list_task: None,
-            progress_rx: None,
-            progress: BackupProgress::default(),
-            error: None,
-            confirm_delete: false,
-            confirm_restore: false,
-        }
-    }
-}
 
 impl BackupState {
     /// Check if a backup operation is in progress
@@ -184,14 +168,13 @@ impl BackupState {
         let mut events = Vec::new();
 
         // Update progress from channel
-        if let Some(rx) = &mut self.progress_rx {
-            if rx.has_changed().unwrap_or(false) {
+        if let Some(rx) = &mut self.progress_rx
+            && rx.has_changed().unwrap_or(false) {
                 self.progress = rx.borrow_and_update().clone();
                 events.push(StateEvent::StatusMessage(
                     self.progress.phase.description().to_string(),
                 ));
             }
-        }
 
         // Check if backup operation task is complete
         match poll_task(&mut self.task) {

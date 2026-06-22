@@ -149,11 +149,10 @@ pub async fn install_update(
     });
 
     // Optional cleanup of current archive directory
-    if remove_previous_version {
-        if let Err(e) = tokio::fs::remove_dir_all(&archive_dir).await {
+    if remove_previous_version
+        && let Err(e) = tokio::fs::remove_dir_all(&archive_dir).await {
             tracing::warn!("Failed to remove installation archive: {}", e);
         }
-    }
 
     // Complete
     let _ = progress_tx.send(UpdateProgress {
@@ -403,13 +402,12 @@ async fn extract_tar_gz(
             let outpath = destination.join(&relative);
 
             // Ensure the parent directory exists before unpacking.
-            if let Some(parent) = outpath.parent() {
-                if !parent.exists() {
+            if let Some(parent) = outpath.parent()
+                && !parent.exists() {
                     std::fs::create_dir_all(parent).with_context(|| {
                         format!("Failed to create parent directory {:?}", parent)
                     })?;
                 }
-            }
 
             entry
                 .unpack(&outpath)
@@ -474,13 +472,12 @@ async fn extract_zip(
                     .with_context(|| format!("Failed to create directory {:?}", outpath))?;
             } else {
                 // Ensure parent directory exists
-                if let Some(parent) = outpath.parent() {
-                    if !parent.exists() {
+                if let Some(parent) = outpath.parent()
+                    && !parent.exists() {
                         std::fs::create_dir_all(parent).with_context(|| {
                             format!("Failed to create parent directory {:?}", parent)
                         })?;
                     }
-                }
 
                 // Extract file
                 let mut outfile = std::fs::File::create(&outpath)

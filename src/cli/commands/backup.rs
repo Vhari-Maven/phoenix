@@ -131,7 +131,7 @@ async fn list(format: OutputFormat) -> Result<()> {
         backups: entries,
     };
 
-    print_formatted(&result, format, |r| format_backup_list(r));
+    print_formatted(&result, format, format_backup_list);
 
     Ok(())
 }
@@ -317,7 +317,7 @@ async fn delete(name: Option<String>, keep: Option<usize>, quiet: bool) -> Resul
             }
 
             // Sort by date, newest first
-            backups.sort_by(|a, b| b.modified.cmp(&a.modified));
+            backups.sort_by_key(|b| std::cmp::Reverse(b.modified));
 
             let to_delete: Vec<_> = backups.into_iter().skip(keep_count).collect();
             let count = to_delete.len();

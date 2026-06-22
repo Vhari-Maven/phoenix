@@ -180,14 +180,13 @@ pub fn parse_soundpack_txt(soundpack_dir: &Path) -> Option<(String, String, bool
                     name = Some(value);
                 }
             }
-        } else if line.starts_with("VIEW") {
-            if let Some(rest) = line.strip_prefix("VIEW") {
+        } else if line.starts_with("VIEW")
+            && let Some(rest) = line.strip_prefix("VIEW") {
                 let value = rest.trim().to_string();
                 if !value.is_empty() {
                     view = Some(value);
                 }
             }
-        }
 
         // Stop early if we found both
         if name.is_some() && view.is_some() {
@@ -234,8 +233,8 @@ pub async fn list_installed_soundpacks(
 
         let entries = std::fs::read_dir(&sound_dir_owned)?;
         for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                if let Some((name, view_name, enabled)) = parse_soundpack_txt(&entry.path()) {
+            if entry.path().is_dir()
+                && let Some((name, view_name, enabled)) = parse_soundpack_txt(&entry.path()) {
                     let size = calculate_dir_size(&entry.path());
                     soundpacks.push(InstalledSoundpack {
                         name,
@@ -245,11 +244,10 @@ pub async fn list_installed_soundpacks(
                         size,
                     });
                 }
-            }
         }
 
         // Sort by view name
-        soundpacks.sort_by(|a, b| a.view_name.to_lowercase().cmp(&b.view_name.to_lowercase()));
+        soundpacks.sort_by_key(|a| a.view_name.to_lowercase());
 
         Ok(soundpacks)
     })
@@ -294,7 +292,7 @@ pub async fn delete_soundpack(soundpack_path: PathBuf) -> Result<(), SoundpackEr
     // Use remove_dir_all crate for faster deletion on Windows
     tokio::task::spawn_blocking(move || {
         remove_dir_all::remove_dir_all(&soundpack_path)
-            .map_err(|e| SoundpackError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))
+            .map_err(|e| SoundpackError::Io(std::io::Error::other(e)))
     })
     .await
     .map_err(|_| SoundpackError::Cancelled)??;
@@ -402,13 +400,12 @@ pub fn find_soundpack_dir(extract_dir: &Path) -> Option<PathBuf> {
         .min_depth(migration_cfg.soundpack.min_search_depth)
         .max_depth(migration_cfg.soundpack.max_search_depth)
     {
-        if let Ok(entry) = entry {
-            if entry.file_name() == game_cfg.metadata.soundpack_info.as_str()
-                || entry.file_name() == game_cfg.metadata.soundpack_info_disabled.as_str()
+        if let Ok(entry) = entry
+            && (entry.file_name() == game_cfg.metadata.soundpack_info.as_str()
+                || entry.file_name() == game_cfg.metadata.soundpack_info_disabled.as_str())
             {
                 return entry.path().parent().map(|p| p.to_path_buf());
             }
-        }
     }
     None
 }
@@ -416,7 +413,7 @@ pub fn find_soundpack_dir(extract_dir: &Path) -> Option<PathBuf> {
 /// Extract filename from URL
 fn extract_filename_from_url(url: &str) -> String {
     url.split('/')
-        .last()
+        .next_back()
         .and_then(|s| s.split('?').next())
         .unwrap_or("soundpack.zip")
         .to_string()
@@ -750,12 +747,13 @@ mod tests {
 
     #[test]
     fn test_progress_fraction() {
-        let mut progress = SoundpackProgress::default();
-
         // Download progress
-        progress.phase = SoundpackPhase::Downloading;
-        progress.bytes_downloaded = 50;
-        progress.total_bytes = 100;
+        let mut progress = SoundpackProgress {
+            phase: SoundpackPhase::Downloading,
+            bytes_downloaded: 50,
+            total_bytes: 100,
+            ..Default::default()
+        };
         assert_eq!(progress.download_fraction(), 0.5);
 
         // Extract progress

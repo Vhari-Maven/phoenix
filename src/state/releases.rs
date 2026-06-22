@@ -9,7 +9,11 @@ use crate::github::{FetchResult, GitHubClient, RateLimitInfo, Release};
 use crate::state::StateEvent;
 use crate::task::{poll_task, PollResult};
 
+/// Result of a changelog fetch task: the changelog body and an optional title.
+type ChangelogResult = Result<(String, Option<String>)>;
+
 /// Releases-related state
+#[derive(Default)]
 pub struct ReleasesState {
     /// Fetched experimental releases
     pub experimental: Vec<Release>,
@@ -28,27 +32,11 @@ pub struct ReleasesState {
     /// Last known rate limit info from GitHub API
     pub rate_limit: RateLimitInfo,
     /// Async task for fetching a changelog
-    changelog_task: Option<JoinHandle<Result<(String, Option<String>)>>>,
+    changelog_task: Option<JoinHandle<ChangelogResult>>,
     /// Whether a changelog is being fetched
     pub changelog_loading: bool,
 }
 
-impl Default for ReleasesState {
-    fn default() -> Self {
-        Self {
-            experimental: Vec::new(),
-            stable: Vec::new(),
-            selected_idx: None,
-            task: None,
-            fetching_branch: None,
-            loading: false,
-            error: None,
-            rate_limit: RateLimitInfo::default(),
-            changelog_task: None,
-            changelog_loading: false,
-        }
-    }
-}
 
 impl ReleasesState {
     /// Get releases for the specified branch
@@ -83,8 +71,8 @@ impl ReleasesState {
         // Compare build numbers - this distinguishes multiple builds on the same day
         // Installed: build_number like "2025-12-20-2147" stored in released_on
         // Release tag: like "cdda-experimental-2025-12-20-2147"
-        if let Some(version_info) = &game_info.version_info {
-            if let Some(ref installed_build) = version_info.released_on {
+        if let Some(version_info) = &game_info.version_info
+            && let Some(ref installed_build) = version_info.released_on {
                 // Check if the release tag contains our build number
                 // e.g., "cdda-experimental-2025-12-20-2147" contains "2025-12-20-2147"
                 if selected_release.tag_name.contains(installed_build) {
@@ -92,7 +80,6 @@ impl ReleasesState {
                 }
                 return true; // Different version
             }
-        }
 
         // Fallback: assume different (allow update)
         true

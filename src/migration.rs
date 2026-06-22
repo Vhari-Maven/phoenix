@@ -101,30 +101,26 @@ pub fn parse_mod_ident(mod_dir: &Path) -> Option<ModInfo> {
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
     // Try as single object
-    if let Some(obj) = json.as_object() {
-        if obj.get("type").and_then(|v| v.as_str()) == Some("MOD_INFO") {
-            if let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
+    if let Some(obj) = json.as_object()
+        && obj.get("type").and_then(|v| v.as_str()) == Some("MOD_INFO")
+            && let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
                 return Some(ModInfo {
                     id: id.to_string(),
                     path: mod_dir.to_path_buf(),
                 });
             }
-        }
-    }
 
     // Try as array - find first MOD_INFO entry
     if let Some(arr) = json.as_array() {
         for item in arr {
-            if let Some(obj) = item.as_object() {
-                if obj.get("type").and_then(|v| v.as_str()) == Some("MOD_INFO") {
-                    if let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
+            if let Some(obj) = item.as_object()
+                && obj.get("type").and_then(|v| v.as_str()) == Some("MOD_INFO")
+                    && let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
                         return Some(ModInfo {
                             id: id.to_string(),
                             path: mod_dir.to_path_buf(),
                         });
                     }
-                }
-            }
         }
     }
 
@@ -203,12 +199,11 @@ pub fn scan_mods_directory(mods_dir: &Path) -> HashMap<String, ModInfo> {
     if let Ok(entries) = std::fs::read_dir(mods_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.is_dir() {
-                if let Some(mod_info) = parse_mod_ident(&path) {
+            if path.is_dir()
+                && let Some(mod_info) = parse_mod_ident(&path) {
                     // Only insert first occurrence (like Python does)
                     mods.entry(mod_info.id.clone()).or_insert(mod_info);
                 }
-            }
         }
     }
 
@@ -226,13 +221,12 @@ pub fn scan_tilesets_directory(gfx_dir: &Path) -> HashMap<String, TilesetInfo> {
     if let Ok(entries) = std::fs::read_dir(gfx_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.is_dir() {
-                if let Some(tileset_info) = parse_tileset_info(&path) {
+            if path.is_dir()
+                && let Some(tileset_info) = parse_tileset_info(&path) {
                     tilesets
                         .entry(tileset_info.name.clone())
                         .or_insert(tileset_info);
                 }
-            }
         }
     }
 
@@ -250,13 +244,12 @@ pub fn scan_soundpacks_directory(sound_dir: &Path) -> HashMap<String, SoundpackI
     if let Ok(entries) = std::fs::read_dir(sound_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.is_dir() {
-                if let Some(soundpack_info) = parse_soundpack_info(&path) {
+            if path.is_dir()
+                && let Some(soundpack_info) = parse_soundpack_info(&path) {
                     soundpacks
                         .entry(soundpack_info.name.clone())
                         .or_insert(soundpack_info);
                 }
-            }
         }
     }
 
@@ -336,17 +329,15 @@ fn scan_soundpack_files_recursive(
         let path = entry.path();
         if path.is_dir() {
             scan_soundpack_files_recursive(base_dir, &path, files, content_extensions);
-        } else if path.is_file() {
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        } else if path.is_file()
+            && let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 let ext_lower = ext.to_lowercase();
                 // Only track files with configured extensions (audio and JSON)
-                if content_extensions.iter().any(|e| e == &ext_lower) {
-                    if let Ok(relative) = path.strip_prefix(base_dir) {
+                if content_extensions.iter().any(|e| e == &ext_lower)
+                    && let Ok(relative) = path.strip_prefix(base_dir) {
                         files.insert(relative.to_path_buf());
                     }
-                }
             }
-        }
     }
 }
 
