@@ -266,6 +266,17 @@ async fn extract_archive(
     }
 }
 
+/// Whether a path is safe to join onto an extraction destination.
+///
+/// A path is safe only if it is relative and contains no parent-dir (`..`)
+/// components. Absolute or rooted paths are rejected because `Path::join`
+/// discards the base when given one, letting an entry escape the destination.
+fn is_safe_relative(path: &Path) -> bool {
+    path.components().all(|c| {
+        matches!(c, Component::Normal(_) | Component::CurDir)
+    })
+}
+
 /// Extract a gzip-compressed tarball to the destination directory.
 ///
 /// CDDA's Linux releases wrap everything in a single top-level directory
@@ -362,13 +373,31 @@ async fn extract_tar_gz(
                 continue;
             }
 
-            // Guard against path traversal (entries containing "..").
-            if relative
-                .components()
-                .any(|c| matches!(c, Component::ParentDir))
-            {
+            // Guard against path traversal. Reject entries that could write
+            // outside `destination`: parent-dir components ("..") or an
+            // absolute/rooted path (which would make `destination.join` discard
+            // the base entirely).
+            if !is_safe_relative(&relative) {
                 tracing::warn!("Skipping unsafe tar entry: {:?}", entry_path);
                 continue;
+            }
+
+            // Symlinks and hardlinks can also escape via their *target*, even
+            // when the entry path itself is safe (e.g. a symlink pointing at
+            // "../../etc"). Reject any link whose target isn't safely relative.
+            if matches!(
+                entry.header().entry_type(),
+                tar::EntryType::Symlink | tar::EntryType::Link
+            ) {
+                let unsafe_link = entry
+                    .link_name()
+                    .ok()
+                    .flatten()
+                    .is_none_or(|target| !is_safe_relative(&target));
+                if unsafe_link {
+                    tracing::warn!("Skipping unsafe tar link entry: {:?}", entry_path);
+                    continue;
+                }
             }
 
             let outpath = destination.join(&relative);
@@ -1098,6 +1127,79 @@ mod tests {
             let mode = fs::metadata(&exe_path).unwrap().permissions().mode();
             assert_ne!(mode & 0o111, 0, "executable bit should be preserved");
         }
+    }
+
+    #[tokio::test]
+    async fn test_extract_tar_gz_rejects_path_traversal() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+
+        let temp_dir = TempDir::new().unwrap();
+        let archive_path = temp_dir.path().join("evil.tar.gz");
+        let dest = temp_dir.path().join("game");
+        fs::create_dir_all(&dest).unwrap();
+
+        // Build a tarball with traversal attempts and one legitimate file.
+        // No shared wrapper directory here, so strip_prefix is None and the
+        // raw entry paths are what the guard must reject.
+        {
+            let tar_gz = fs::File::create(&archive_path).unwrap();
+            let enc = GzEncoder::new(tar_gz, Compression::default());
+            let mut builder = tar::Builder::new(enc);
+
+            // Write the entry name directly into the raw header to bypass the
+            // builder's `set_path` sanitization (which rejects `..`), so we can
+            // simulate a maliciously crafted archive.
+            let mut append_raw = |name: &str| {
+                let contents = b"pwned";
+                let mut header = tar::Header::new_gnu();
+                {
+                    let bytes = header.as_mut_bytes();
+                    let name_bytes = name.as_bytes();
+                    bytes[..name_bytes.len()].copy_from_slice(name_bytes);
+                }
+                header.set_size(contents.len() as u64);
+                header.set_mode(0o644);
+                header.set_entry_type(tar::EntryType::Regular);
+                header.set_cksum();
+                builder.append(&header, &contents[..]).unwrap();
+            };
+
+            // Parent-dir traversal.
+            append_raw("../escape.txt");
+            // Absolute path (RootDir component on Unix).
+            append_raw("/tmp/phoenix_abs_escape.txt");
+            // Legitimate file that must still extract.
+            append_raw("safe.txt");
+
+            builder.into_inner().unwrap().finish().unwrap();
+        }
+
+        let (progress_tx, _progress_rx) = watch::channel(UpdateProgress::default());
+        let extracted = extract_tar_gz(&archive_path, &dest, progress_tx)
+            .await
+            .unwrap();
+
+        // Only the safe file should be written.
+        assert_eq!(extracted, 1, "unsafe entries must be skipped");
+        assert!(dest.join("safe.txt").exists());
+        assert!(
+            !temp_dir.path().join("escape.txt").exists(),
+            "parent-dir traversal must not escape destination"
+        );
+        assert!(
+            !Path::new("/tmp/phoenix_abs_escape.txt").exists(),
+            "absolute-path entry must not escape destination"
+        );
+    }
+
+    #[test]
+    fn test_is_safe_relative() {
+        assert!(is_safe_relative(Path::new("foo/bar.txt")));
+        assert!(is_safe_relative(Path::new("./foo")));
+        assert!(!is_safe_relative(Path::new("../foo")));
+        assert!(!is_safe_relative(Path::new("foo/../../bar")));
+        assert!(!is_safe_relative(Path::new("/etc/passwd")));
     }
 
     #[tokio::test]

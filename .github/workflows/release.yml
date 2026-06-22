@@ -62,8 +62,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # System libraries required to build egui/eframe (winit/xcb), rfd file
-      # dialogs (GTK), and reqwest's TLS backend.
+      # System libraries required to build egui/eframe (winit/xcb) and rfd
+      # file dialogs (GTK). TLS is handled by rustls (pure Rust), so no
+      # system OpenSSL/libssl is needed.
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -73,7 +74,6 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
-            libssl-dev \
             pkg-config
 
       - name: Build release
