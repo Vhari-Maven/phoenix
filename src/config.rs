@@ -1,7 +1,9 @@
 //! Application configuration management.
 //!
 //! This module handles loading and saving Phoenix settings from a TOML file
-//! located at `%APPDATA%\phoenix\Phoenix\config\config.toml`.
+//! in the platform config directory (via the `directories` crate):
+//! `%APPDATA%\phoenix\Phoenix\config\config.toml` on Windows, or
+//! `~/.config/phoenix/config.toml` on Linux.
 //!
 //! Configuration is organized into sections:
 //!

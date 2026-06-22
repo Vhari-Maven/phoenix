@@ -85,7 +85,7 @@ struct ReleaseEntry {
     tag: String,
     name: String,
     published: String,
-    has_windows_asset: bool,
+    has_asset: bool,
     asset_size_bytes: Option<u64>,
 }
 
@@ -133,7 +133,7 @@ async fn check(format: OutputFormat) -> Result<()> {
     };
 
     let latest = releases.first();
-    let latest_asset = latest.and_then(|r| GitHubClient::find_windows_asset(r));
+    let latest_asset = latest.and_then(|r| GitHubClient::find_platform_asset(r));
 
     let latest_version = latest.map(|r| r.tag_name.clone());
     let update_available = match (&current_version, &latest_version) {
@@ -189,14 +189,14 @@ async fn releases(limit: usize, branch: Option<String>, tags: Option<String>, fo
         .into_iter()
         .take(limit)
         .map(|r| {
-            let asset = GitHubClient::find_windows_asset(&r);
-            let has_windows_asset = asset.is_some();
+            let asset = GitHubClient::find_platform_asset(&r);
+            let has_asset = asset.is_some();
             let asset_size_bytes = asset.map(|a| a.size);
             ReleaseEntry {
                 tag: r.tag_name,
                 name: r.name,
                 published: r.published_at[..10].to_string(), // Just date
-                has_windows_asset,
+                has_asset,
                 asset_size_bytes,
             }
         })
@@ -218,16 +218,16 @@ async fn releases(limit: usize, branch: Option<String>, tags: Option<String>, fo
                 .asset_size_bytes
                 .map(format_size)
                 .unwrap_or_else(|| "N/A".to_string());
-            let marker = if release.has_windows_asset { "" } else { " *" };
+            let marker = if release.has_asset { "" } else { " *" };
             lines.push(format!(
                 "{:<40} {:>12} {:>10}{}",
                 release.tag, release.published, size, marker
             ));
         }
 
-        if r.releases.iter().any(|r| !r.has_windows_asset) {
+        if r.releases.iter().any(|r| !r.has_asset) {
             lines.push(String::new());
-            lines.push("* = No Windows x64 graphical build available".to_string());
+            lines.push("* = No compatible x64 graphical build available".to_string());
         }
 
         lines.join("\n")
@@ -321,8 +321,8 @@ async fn download(version: Option<String>, format: OutputFormat, quiet: bool) ->
     };
 
     let release = release.context("No release found")?;
-    let asset = GitHubClient::find_windows_asset(release)
-        .context("No Windows x64 graphical asset found for this release")?;
+    let asset = GitHubClient::find_platform_asset(release)
+        .context("No compatible x64 graphical asset found for this release")?;
 
     // Create progress channel
     let (progress_tx, mut progress_rx) = watch::channel(UpdateProgress::default());
@@ -349,10 +349,11 @@ async fn download(version: Option<String>, format: OutputFormat, quiet: bool) ->
         });
     }
 
-    // Download to temp location
+    // Download to temp location, preserving the asset's archive extension
+    // (.zip on Windows, .tar.gz on Linux).
     let download_dir = std::env::temp_dir().join("phoenix");
     std::fs::create_dir_all(&download_dir)?;
-    let dest_path = download_dir.join(format!("{}.zip", release.tag_name));
+    let dest_path = download_dir.join(&asset.name);
 
     let result = update::download_asset(
         client.client().clone(),
@@ -375,6 +376,13 @@ async fn download(version: Option<String>, format: OutputFormat, quiet: bool) ->
     Ok(())
 }
 
+/// Whether a path looks like an archive Phoenix can install (.zip or .tar.gz).
+fn is_supported_archive(path: &std::path::Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let lower = name.to_lowercase();
+    lower.ends_with(".zip") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz")
+}
+
 async fn install(format: OutputFormat, quiet: bool) -> Result<()> {
     let config = Config::load()?;
     let game_dir = config
@@ -384,20 +392,20 @@ async fn install(format: OutputFormat, quiet: bool) -> Result<()> {
         .map(PathBuf::from)
         .context("No game directory configured")?;
 
-    // Look for downloaded update
+    // Look for downloaded update (either a .zip or a .tar.gz archive)
     let download_dir = std::env::temp_dir().join("phoenix");
-    let mut zip_files: Vec<_> = std::fs::read_dir(&download_dir)?
+    let mut archive_files: Vec<_> = std::fs::read_dir(&download_dir)?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "zip"))
+        .filter(|e| is_supported_archive(&e.path()))
         .collect();
 
-    if zip_files.is_empty() {
+    if archive_files.is_empty() {
         print_error("No downloaded update found. Run 'phoenix update download' first.");
         return Err(anyhow::anyhow!("No update to install"));
     }
 
     // Sort by modification time, newest first
-    zip_files.sort_by(|a, b| {
+    archive_files.sort_by(|a, b| {
         b.metadata()
             .and_then(|m| m.modified())
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
@@ -408,7 +416,7 @@ async fn install(format: OutputFormat, quiet: bool) -> Result<()> {
             )
     });
 
-    let zip_path = zip_files[0].path();
+    let zip_path = archive_files[0].path();
     println!("Installing: {}", zip_path.display());
 
     // Create progress channel
@@ -471,8 +479,8 @@ async fn apply(
     };
 
     let release = releases.first().context("No releases found")?;
-    let asset = GitHubClient::find_windows_asset(release)
-        .context("No Windows x64 graphical asset found")?;
+    let asset = GitHubClient::find_platform_asset(release)
+        .context("No compatible x64 graphical asset found")?;
 
     if dry_run {
         println!("Dry run - would apply update:");
@@ -518,10 +526,10 @@ async fn apply(
         });
     }
 
-    // Download
+    // Download, preserving the asset's archive extension (.zip / .tar.gz)
     let download_dir = std::env::temp_dir().join("phoenix");
     std::fs::create_dir_all(&download_dir)?;
-    let zip_path = download_dir.join(format!("{}.zip", release.tag_name));
+    let zip_path = download_dir.join(&asset.name);
 
     if !quiet {
         println!("Downloading {}...", release.tag_name);

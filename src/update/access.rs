@@ -15,7 +15,7 @@ use crate::app_data::game_config;
 /// Returns Ok(()) if we can proceed, or an error explaining why not.
 pub async fn check_installation_access(game_dir: &Path) -> Result<()> {
     // Check if game executables can be renamed (indicates they're not in use)
-    for exe_name in &game_config().executables.names {
+    for exe_name in game_config().executables.names() {
         let exe_path = game_dir.join(exe_name);
         if exe_path.exists() {
             // Try to open with exclusive write access

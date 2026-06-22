@@ -58,7 +58,7 @@ pub fn detect_game_fast(directory: &Path) -> Result<Option<GameInfo>> {
     let config = game_config();
 
     // Look for game executable
-    let executable = config.executables.names
+    let executable = config.executables.names()
         .iter()
         .map(|name| directory.join(name))
         .find(|path| path.exists());
@@ -270,10 +270,13 @@ pub fn calculate_dir_size(path: &Path) -> Result<u64> {
 pub fn launch_game(executable: &Path, params: &str) -> Result<()> {
     use std::process::Command;
 
-    let mut cmd = Command::new(executable);
-
     // Set working directory to game directory
     let working_dir = executable.parent().context("Executable has no parent directory")?;
+
+    // Resolve the actual binary/script to spawn (platform-specific).
+    let target = resolve_launch_target(executable, working_dir);
+
+    let mut cmd = Command::new(&target);
     cmd.current_dir(working_dir);
 
     // Add user params
@@ -286,13 +289,34 @@ pub fn launch_game(executable: &Path, params: &str) -> Result<()> {
 
     tracing::info!(
         "Launching game: {:?} with working dir: {:?}",
-        executable,
+        target,
         working_dir
     );
 
     cmd.spawn()?;
 
     Ok(())
+}
+
+/// Resolve the executable/script to actually launch.
+///
+/// On Windows this is just the detected executable. On Linux, CDDA ships a
+/// `cataclysm-launcher` script that sets `LD_LIBRARY_PATH` for the bundled
+/// libraries before running the binary; prefer it when present, otherwise
+/// fall back to the bare binary.
+#[cfg(target_os = "windows")]
+fn resolve_launch_target(executable: &Path, _working_dir: &Path) -> PathBuf {
+    executable.to_path_buf()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn resolve_launch_target(executable: &Path, working_dir: &Path) -> PathBuf {
+    let launcher = working_dir.join(&game_config().executables.linux_launcher);
+    if launcher.exists() {
+        launcher
+    } else {
+        executable.to_path_buf()
+    }
 }
 
 #[cfg(test)]

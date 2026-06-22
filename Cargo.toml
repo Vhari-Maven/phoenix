@@ -24,8 +24,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
-# Archives (only ZIP supported for smaller binary and faster builds)
+# Archives: ZIP (Windows releases) and tar.gz (Linux releases)
 zip = "2"
+tar = "0.4"
+flate2 = "1"
 
 # Browser
 open = "5"
@@ -71,8 +73,11 @@ windows = { version = "0.58", features = [
 ] }
 
 [build-dependencies]
-winres = "0.1"
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Windows-only: embeds icon and version info into the executable
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
 
 [dev-dependencies]
 
