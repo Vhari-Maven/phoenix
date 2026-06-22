@@ -1,7 +1,7 @@
 //! Legacy data migration for Phoenix.
 //!
 //! Handles one-time migration of data from old locations to new locations:
-//! - save_backups folder → AppData/backups
+//! - save_backups folder → platform data directory's backups/
 //! - previous_version folder → .phoenix_archive
 
 use std::path::Path;
@@ -16,8 +16,8 @@ pub fn migrate(game_dir: &Path) {
     let phase_start = Instant::now();
     let mut migrations = Vec::new();
 
-    if let Some(count) = migrate_backups_to_appdata(game_dir) {
-        migrations.push(format!("{} backups to AppData", count));
+    if let Some(count) = migrate_backups_to_data_dir(game_dir) {
+        migrations.push(format!("{} backups to data directory", count));
     }
 
     if migrate_archive_folder(game_dir) {
@@ -33,9 +33,9 @@ pub fn migrate(game_dir: &Path) {
     }
 }
 
-/// Move save_backups from game folder to AppData.
+/// Move save_backups from the game folder to the platform data directory.
 /// Returns the number of backups moved, or None if nothing to migrate.
-fn migrate_backups_to_appdata(game_dir: &Path) -> Option<usize> {
+fn migrate_backups_to_data_dir(game_dir: &Path) -> Option<usize> {
     let legacy_dir = backup::legacy_backup_dir(game_dir);
     if !legacy_dir.exists() || !legacy_dir.is_dir() {
         return None;

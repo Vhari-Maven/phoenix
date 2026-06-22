@@ -1,7 +1,9 @@
 //! Application configuration management.
 //!
 //! This module handles loading and saving Phoenix settings from a TOML file
-//! located at `%APPDATA%\phoenix\Phoenix\config\config.toml`.
+//! in the platform config directory (via the `directories` crate):
+//! `%APPDATA%\phoenix\Phoenix\config\config.toml` on Windows, or
+//! `~/.config/phoenix/config.toml` on Linux.
 //!
 //! Configuration is organized into sections:
 //!
@@ -191,7 +193,7 @@ impl Config {
         Ok(data_dir.to_path_buf())
     }
 
-    /// Get the backups directory (in AppData)
+    /// Get the backups directory (in the platform data directory)
     pub fn backups_dir() -> Result<PathBuf> {
         let data_dir = Self::data_dir()?;
         let backups_dir = data_dir.join("backups");

@@ -4,7 +4,9 @@
 //! to version information. This avoids re-parsing VERSION.txt for previously
 //! seen game builds.
 //!
-//! The database is stored at `%APPDATA%\phoenix\Phoenix\data\phoenix.db`.
+//! The database is stored in the platform data directory (via the
+//! `directories` crate): `%APPDATA%\phoenix\Phoenix\data\phoenix.db` on
+//! Windows, or `~/.local/share/phoenix/phoenix.db` on Linux.
 //!
 //! Stable release hashes are loaded via `app_data::stable_versions()`,
 //! enabling instant version identification.

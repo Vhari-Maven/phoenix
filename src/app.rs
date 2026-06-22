@@ -270,7 +270,7 @@ impl PhoenixApp {
             return;
         }
 
-        // Get the selected release and its Windows asset
+        // Get the selected release and its platform asset
         let releases = self.current_releases();
         let release = match self.releases.selected_idx.and_then(|i| releases.get(i)) {
             Some(r) => r.clone(),
@@ -280,11 +280,11 @@ impl PhoenixApp {
             }
         };
 
-        let asset = match GitHubClient::find_windows_asset(&release) {
+        let asset = match GitHubClient::find_platform_asset(&release) {
             Some(a) => a.clone(),
             None => {
                 self.update.error =
-                    Some("No Windows build available for this release".to_string());
+                    Some("No compatible build available for this release".to_string());
                 return;
             }
         };

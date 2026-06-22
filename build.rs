@@ -1,13 +1,15 @@
-use std::env;
-use std::fs;
-use std::io::{BufWriter, Write};
-use std::path::Path;
-
 fn main() {
-    // Only run on Windows
-    if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
-        return;
-    }
+    // Icon/version embedding is Windows-only. `winres` is a Windows-only
+    // build-dependency, so this code must be compiled out on other hosts.
+    #[cfg(windows)]
+    embed_windows_resources();
+}
+
+/// Embed the application icon and version info into the Windows executable.
+#[cfg(windows)]
+fn embed_windows_resources() {
+    use std::env;
+    use std::path::Path;
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let ico_path = Path::new(&out_dir).join("icon.ico");
@@ -33,7 +35,10 @@ fn main() {
 }
 
 /// Create an ICO file from the PNG icon
-fn create_ico(output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+#[cfg(windows)]
+fn create_ico(output_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs;
+    use std::io::{BufWriter, Write};
     use image::imageops::FilterType;
 
     let png_data = include_bytes!("assets/icon.png");

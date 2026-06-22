@@ -3,7 +3,7 @@
 //! Handles archiving, extraction, restoration, and rollback.
 
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 use tokio::sync::watch;
 
@@ -18,7 +18,7 @@ use super::{UpdatePhase, UpdateProgress};
 /// If extraction or restore fails after archiving, automatically rolls back
 /// to the previous installation.
 pub async fn install_update(
-    zip_path: PathBuf,
+    archive_path: PathBuf,
     game_dir: PathBuf,
     progress_tx: watch::Sender<UpdateProgress>,
     prevent_save_move: bool,
@@ -53,7 +53,7 @@ pub async fn install_update(
     });
 
     let phase_start = Instant::now();
-    let extract_result = extract_zip(&zip_path, &game_dir, progress_tx.clone()).await;
+    let extract_result = extract_archive(&archive_path, &game_dir, progress_tx.clone()).await;
 
     let total_files = match extract_result {
         Ok(count) => count,
@@ -174,7 +174,7 @@ pub async fn install_update(
 ///
 /// This preserves the current game installation in `.phoenix_archive/` so users
 /// can roll back if needed. This is distinct from save backups (compressed archives
-/// of save data managed via the Backups tab, stored in AppData).
+/// of save data managed via the Backups tab, stored in the platform data directory).
 ///
 /// Uses fast rename operations to avoid blocking on deletion:
 /// 1. If old_archive_dir exists, delete it (from a previous failed update)
@@ -243,6 +243,196 @@ async fn archive_current_installation(
 
     tracing::debug!("Moved {} items to archive", items_moved);
     Ok(())
+}
+
+/// Extract a downloaded release archive, dispatching on its format.
+///
+/// Windows releases ship as `.zip`; Linux releases ship as `.tar.gz`.
+async fn extract_archive(
+    archive_path: &Path,
+    destination: &Path,
+    progress_tx: watch::Sender<UpdateProgress>,
+) -> Result<usize> {
+    let name = archive_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        extract_tar_gz(archive_path, destination, progress_tx).await
+    } else {
+        extract_zip(archive_path, destination, progress_tx).await
+    }
+}
+
+/// Whether a path is safe to join onto an extraction destination.
+///
+/// A path is safe only if it is relative and contains no parent-dir (`..`)
+/// components. Absolute or rooted paths are rejected because `Path::join`
+/// discards the base when given one, letting an entry escape the destination.
+fn is_safe_relative(path: &Path) -> bool {
+    path.components().all(|c| {
+        matches!(c, Component::Normal(_) | Component::CurDir)
+    })
+}
+
+/// Extract a gzip-compressed tarball to the destination directory.
+///
+/// CDDA's Linux releases wrap everything in a single top-level directory
+/// (e.g. `cataclysmdda-0.J/`). To match the flat layout produced by the
+/// Windows ZIP, that common wrapper directory is stripped during extraction.
+/// File permissions (notably the executable bit on the game binary) are
+/// preserved.
+async fn extract_tar_gz(
+    archive_path: &Path,
+    destination: &Path,
+    progress_tx: watch::Sender<UpdateProgress>,
+) -> Result<usize> {
+    use flate2::read::GzDecoder;
+    use std::ffi::OsString;
+
+    let archive_path = archive_path.to_path_buf();
+    let destination = destination.to_path_buf();
+
+    // Decompression + extraction is blocking, run in spawn_blocking
+    tokio::task::spawn_blocking(move || {
+        // Pass 1: count entries and detect a wrapper directory shared by all
+        // entries (so we only strip it when it genuinely wraps everything).
+        let (total, strip_prefix) = {
+            let file =
+                std::fs::File::open(&archive_path).context("Failed to open tar.gz file")?;
+            let mut archive = tar::Archive::new(GzDecoder::new(file));
+
+            let mut total = 0usize;
+            let mut prefix: Option<OsString> = None;
+            let mut shared = true;
+
+            for entry in archive.entries().context("Failed to read tar.gz archive")? {
+                let entry = entry.context("Failed to read tar entry")?;
+                let path = entry.path().context("Invalid path in tar entry")?;
+
+                let first = match path.components().next() {
+                    Some(Component::Normal(c)) => Some(c.to_owned()),
+                    _ => None,
+                };
+
+                match (&prefix, first) {
+                    (None, Some(c)) => prefix = Some(c),
+                    (Some(p), Some(c)) if *p == c => {}
+                    _ => shared = false,
+                }
+
+                total += 1;
+            }
+
+            let strip_prefix = if shared { prefix } else { None };
+            (total, strip_prefix)
+        };
+
+        if let Some(prefix) = &strip_prefix {
+            tracing::debug!("Stripping tar.gz wrapper directory: {:?}", prefix);
+        }
+
+        // Send initial extraction progress
+        let _ = progress_tx.send(UpdateProgress {
+            phase: UpdatePhase::Extracting,
+            total_files: total,
+            files_extracted: 0,
+            ..Default::default()
+        });
+
+        // Pass 2: extract, stripping the wrapper directory.
+        let file = std::fs::File::open(&archive_path).context("Failed to open tar.gz file")?;
+        let mut archive = tar::Archive::new(GzDecoder::new(file));
+        archive.set_preserve_permissions(true);
+        archive.set_overwrite(true);
+
+        let batch_size = migration_config().download.extraction_batch_size;
+        let mut extracted = 0usize;
+
+        for (i, entry) in archive
+            .entries()
+            .context("Failed to read tar.gz archive")?
+            .enumerate()
+        {
+            let mut entry = entry.context("Failed to read tar entry")?;
+            let entry_path = entry.path().context("Invalid path in tar entry")?.into_owned();
+
+            // Strip the common wrapper directory, if any.
+            let relative = match &strip_prefix {
+                Some(prefix) => entry_path
+                    .strip_prefix(prefix)
+                    .unwrap_or(&entry_path)
+                    .to_path_buf(),
+                None => entry_path.clone(),
+            };
+
+            // Skip the wrapper directory entry itself.
+            if relative.as_os_str().is_empty() {
+                continue;
+            }
+
+            // Guard against path traversal. Reject entries that could write
+            // outside `destination`: parent-dir components ("..") or an
+            // absolute/rooted path (which would make `destination.join` discard
+            // the base entirely).
+            if !is_safe_relative(&relative) {
+                tracing::warn!("Skipping unsafe tar entry: {:?}", entry_path);
+                continue;
+            }
+
+            // Symlinks and hardlinks can also escape via their *target*, even
+            // when the entry path itself is safe (e.g. a symlink pointing at
+            // "../../etc"). Reject any link whose target isn't safely relative.
+            if matches!(
+                entry.header().entry_type(),
+                tar::EntryType::Symlink | tar::EntryType::Link
+            ) {
+                let unsafe_link = entry
+                    .link_name()
+                    .ok()
+                    .flatten()
+                    .is_none_or(|target| !is_safe_relative(&target));
+                if unsafe_link {
+                    tracing::warn!("Skipping unsafe tar link entry: {:?}", entry_path);
+                    continue;
+                }
+            }
+
+            let outpath = destination.join(&relative);
+
+            // Ensure the parent directory exists before unpacking.
+            if let Some(parent) = outpath.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create parent directory {:?}", parent)
+                    })?;
+                }
+            }
+
+            entry
+                .unpack(&outpath)
+                .with_context(|| format!("Failed to extract {:?}", outpath))?;
+            extracted += 1;
+
+            // Update progress periodically
+            if i % batch_size == 0 || i == total.saturating_sub(1) {
+                let current_file = relative.to_string_lossy().to_string();
+                let _ = progress_tx.send(UpdateProgress {
+                    phase: UpdatePhase::Extracting,
+                    files_extracted: i + 1,
+                    total_files: total,
+                    current_file,
+                    ..Default::default()
+                });
+            }
+        }
+
+        Ok::<_, anyhow::Error>(extracted)
+    })
+    .await
+    .context("tar.gz extraction task panicked")?
 }
 
 /// Extract a ZIP archive to the destination directory.
@@ -633,7 +823,7 @@ async fn verify_extraction(game_dir: &Path) -> bool {
     // Just check for the executable - the most critical file
     let exe_exists = game_config()
         .executables
-        .names
+        .names()
         .iter()
         .any(|exe| game_dir.join(exe).exists());
 
@@ -864,6 +1054,152 @@ mod tests {
         // New .phoenix_archive should have current game file
         assert!(archive_dir.join("game.exe").exists());
         assert!(!archive_dir.join("old_file.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_extract_tar_gz_strips_wrapper_and_preserves_mode() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+
+        let temp_dir = TempDir::new().unwrap();
+        let archive_path = temp_dir.path().join("release.tar.gz");
+        let dest = temp_dir.path().join("game");
+        fs::create_dir_all(&dest).unwrap();
+
+        // Build a tarball that wraps everything in a top-level directory,
+        // mirroring CDDA's Linux release layout.
+        {
+            let tar_gz = fs::File::create(&archive_path).unwrap();
+            let enc = GzEncoder::new(tar_gz, Compression::default());
+            let mut builder = tar::Builder::new(enc);
+
+            // Executable binary entry (mode 0755).
+            let exe_contents = b"#!/bin/true\n";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(exe_contents.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder
+                .append_data(
+                    &mut header,
+                    "cataclysmdda-0.J/cataclysm-tiles",
+                    &exe_contents[..],
+                )
+                .unwrap();
+
+            // A nested data file (mode 0644).
+            let data_contents = b"{}";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data_contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(
+                    &mut header,
+                    "cataclysmdda-0.J/data/json/test.json",
+                    &data_contents[..],
+                )
+                .unwrap();
+
+            builder.into_inner().unwrap().finish().unwrap();
+        }
+
+        let (progress_tx, _progress_rx) = watch::channel(UpdateProgress::default());
+        let extracted = extract_tar_gz(&archive_path, &dest, progress_tx)
+            .await
+            .unwrap();
+        assert_eq!(extracted, 2);
+
+        // Wrapper directory should be stripped: files land directly in dest.
+        let exe_path = dest.join("cataclysm-tiles");
+        let data_path = dest.join("data").join("json").join("test.json");
+        assert!(exe_path.exists(), "binary should be extracted without wrapper dir");
+        assert!(data_path.exists(), "nested data file should be extracted");
+        assert!(
+            !dest.join("cataclysmdda-0.J").exists(),
+            "wrapper directory should not be present"
+        );
+
+        // Executable bit should be preserved on Unix.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&exe_path).unwrap().permissions().mode();
+            assert_ne!(mode & 0o111, 0, "executable bit should be preserved");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_extract_tar_gz_rejects_path_traversal() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+
+        let temp_dir = TempDir::new().unwrap();
+        let archive_path = temp_dir.path().join("evil.tar.gz");
+        let dest = temp_dir.path().join("game");
+        fs::create_dir_all(&dest).unwrap();
+
+        // Build a tarball with traversal attempts and one legitimate file.
+        // No shared wrapper directory here, so strip_prefix is None and the
+        // raw entry paths are what the guard must reject.
+        {
+            let tar_gz = fs::File::create(&archive_path).unwrap();
+            let enc = GzEncoder::new(tar_gz, Compression::default());
+            let mut builder = tar::Builder::new(enc);
+
+            // Write the entry name directly into the raw header to bypass the
+            // builder's `set_path` sanitization (which rejects `..`), so we can
+            // simulate a maliciously crafted archive.
+            let mut append_raw = |name: &str| {
+                let contents = b"pwned";
+                let mut header = tar::Header::new_gnu();
+                {
+                    let bytes = header.as_mut_bytes();
+                    let name_bytes = name.as_bytes();
+                    bytes[..name_bytes.len()].copy_from_slice(name_bytes);
+                }
+                header.set_size(contents.len() as u64);
+                header.set_mode(0o644);
+                header.set_entry_type(tar::EntryType::Regular);
+                header.set_cksum();
+                builder.append(&header, &contents[..]).unwrap();
+            };
+
+            // Parent-dir traversal.
+            append_raw("../escape.txt");
+            // Absolute path (RootDir component on Unix).
+            append_raw("/tmp/phoenix_abs_escape.txt");
+            // Legitimate file that must still extract.
+            append_raw("safe.txt");
+
+            builder.into_inner().unwrap().finish().unwrap();
+        }
+
+        let (progress_tx, _progress_rx) = watch::channel(UpdateProgress::default());
+        let extracted = extract_tar_gz(&archive_path, &dest, progress_tx)
+            .await
+            .unwrap();
+
+        // Only the safe file should be written.
+        assert_eq!(extracted, 1, "unsafe entries must be skipped");
+        assert!(dest.join("safe.txt").exists());
+        assert!(
+            !temp_dir.path().join("escape.txt").exists(),
+            "parent-dir traversal must not escape destination"
+        );
+        assert!(
+            !Path::new("/tmp/phoenix_abs_escape.txt").exists(),
+            "absolute-path entry must not escape destination"
+        );
+    }
+
+    #[test]
+    fn test_is_safe_relative() {
+        assert!(is_safe_relative(Path::new("foo/bar.txt")));
+        assert!(is_safe_relative(Path::new("./foo")));
+        assert!(!is_safe_relative(Path::new("../foo")));
+        assert!(!is_safe_relative(Path::new("foo/../../bar")));
+        assert!(!is_safe_relative(Path::new("/etc/passwd")));
     }
 
     #[tokio::test]

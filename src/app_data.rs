@@ -44,7 +44,35 @@ pub struct GameConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct ExecutablesConfig {
-    pub names: Vec<String>,
+    // These are platform-specific: each is read only on its target platform
+    // (via `names()` / launch resolution), so the other appears unused per build.
+    /// Executable names to detect on Windows (first found wins).
+    #[allow(dead_code)]
+    pub windows: Vec<String>,
+    /// Executable names to detect on Linux (first found wins).
+    #[allow(dead_code)]
+    pub linux: Vec<String>,
+    /// Launcher script preferred for launching on Linux.
+    #[allow(dead_code)]
+    pub linux_launcher: String,
+}
+
+impl ExecutablesConfig {
+    /// Executable names to search for on the current platform.
+    ///
+    /// Used for installation detection and version hashing. The Linux
+    /// launcher script is intentionally excluded here (it is not the game
+    /// binary); see [`crate::game::launch_game`] for launch resolution.
+    pub fn names(&self) -> &[String] {
+        #[cfg(target_os = "windows")]
+        {
+            &self.windows
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            &self.linux
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -227,11 +255,11 @@ pub struct EmbeddedRelease {
     pub name: String,
     /// Publication date (YYYY-MM-DD)
     pub published: String,
-    /// Windows asset filename (if available)
+    /// Release asset filename (if available)
     pub asset_name: Option<String>,
-    /// Windows asset download URL (if available)
+    /// Release asset download URL (if available)
     pub asset_url: Option<String>,
-    /// Windows asset size in bytes (if available)
+    /// Release asset size in bytes (if available)
     pub asset_size: Option<u64>,
     /// SHA256 hashes of executables for version identification
     #[serde(default)]

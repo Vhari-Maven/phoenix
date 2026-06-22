@@ -281,29 +281,70 @@ impl GitHubClient {
         Ok(FetchResult { data: releases, rate_limit })
     }
 
+    /// Find the graphical x64 asset for the current platform.
+    ///
+    /// Dispatches to [`find_windows_asset`](Self::find_windows_asset) or
+    /// [`find_linux_asset`](Self::find_linux_asset) based on the build target.
+    /// This is what callers should normally use.
+    pub fn find_platform_asset(release: &Release) -> Option<&ReleaseAsset> {
+        #[cfg(target_os = "windows")]
+        let asset = Self::find_windows_asset(release);
+        #[cfg(not(target_os = "windows"))]
+        let asset = Self::find_linux_asset(release);
+
+        if asset.is_none() {
+            tracing::warn!(
+                "No compatible x64 graphical asset in {} ({} assets)",
+                release.name,
+                release.assets.len()
+            );
+        }
+
+        asset
+    }
+
     /// Find the Windows x64 graphical asset in a release.
     ///
-    /// Searches release assets for a Windows build matching these criteria:
-    /// - Contains "windows" in the filename
-    /// - Contains "tiles" or "graphics" (graphical build, not console)
-    /// - Contains "x64" (64-bit build)
-    /// - Ends with ".zip"
+    /// Matches assets containing "windows", "tiles"/"graphics", and "x64",
+    /// ending in ".zip". Prefers the variant with sounds included.
     ///
-    /// If multiple matches exist, prefers the version with sounds included.
-    /// Returns `None` if no suitable asset is found.
+    /// Only invoked on Windows builds (see [`find_platform_asset`](Self::find_platform_asset)).
+    #[allow(dead_code)]
     pub fn find_windows_asset(release: &Release) -> Option<&ReleaseAsset> {
+        Self::find_graphical_asset(release, "windows", ".zip")
+    }
+
+    /// Find the Linux x64 graphical asset in a release.
+    ///
+    /// Matches assets containing "linux", "tiles"/"graphics", and "x64",
+    /// ending in ".tar.gz". Prefers the variant with sounds included.
+    /// (Terminal-only builds are excluded by the graphical requirement.)
+    ///
+    /// Only invoked on Linux builds (see [`find_platform_asset`](Self::find_platform_asset)).
+    #[allow(dead_code)]
+    pub fn find_linux_asset(release: &Release) -> Option<&ReleaseAsset> {
+        Self::find_graphical_asset(release, "linux", ".tar.gz")
+    }
+
+    /// Shared selection logic: find a graphical x64 asset for a given
+    /// platform token and archive extension, preferring sounds.
+    fn find_graphical_asset<'a>(
+        release: &'a Release,
+        platform: &str,
+        extension: &str,
+    ) -> Option<&'a ReleaseAsset> {
         let mut best_match: Option<&ReleaseAsset> = None;
 
         for asset in &release.assets {
             let name = asset.name.to_lowercase();
-            let is_windows = name.contains("windows");
+            let is_platform = name.contains(platform);
             // Match both old "tiles" naming and new "with-graphics" naming
             let is_graphical = name.contains("tiles") || name.contains("graphics");
             let is_x64 = name.contains("x64");
-            let is_zip = name.ends_with(".zip");
+            let is_match_ext = name.ends_with(extension);
             let has_sounds = name.contains("sounds");
 
-            if is_windows && is_graphical && is_x64 && is_zip {
+            if is_platform && is_graphical && is_x64 && is_match_ext {
                 // Prefer version with sounds
                 if has_sounds || best_match.is_none() {
                     best_match = Some(asset);
@@ -313,14 +354,6 @@ impl GitHubClient {
                     }
                 }
             }
-        }
-
-        if best_match.is_none() {
-            tracing::warn!(
-                "No Windows x64 graphical asset in {} ({} assets)",
-                release.name,
-                release.assets.len()
-            );
         }
 
         best_match

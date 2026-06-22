@@ -2,9 +2,16 @@
 # Defines game-specific paths, filenames, and detection patterns
 
 [executables]
-# Executable filenames to search for when detecting game installation
-# Order matters: first found is used
-names = ["cataclysm-tiles.exe", "cataclysm.exe"]
+# Executable filenames to search for when detecting a game installation.
+# Order matters: first found is used. Lists are platform-specific because
+# CDDA's Linux binaries have no extension.
+windows = ["cataclysm-tiles.exe", "cataclysm.exe"]
+linux = ["cataclysm-tiles", "cataclysm"]
+
+# On Linux, CDDA ships a `cataclysm-launcher` shell script that sets
+# LD_LIBRARY_PATH for the bundled libraries before running the binary.
+# It is preferred for launching (but not for detection/version hashing).
+linux_launcher = "cataclysm-launcher"
 
 [directories]
 # Save directory name within game folder

@@ -5,17 +5,17 @@ A fast, native game launcher for Cataclysm: Dark Days Ahead, built in Rust.
 ## Tech Stack
 
 - **Language:** Rust (2024 edition)
-- **Target:** Windows x64 only
+- **Target:** Windows x64 and Linux x64
 - **GUI:** egui + eframe + egui_commonmark (markdown)
 - **Async Runtime:** tokio
 - **HTTP:** reqwest
 - **Serialization:** serde, serde_json, toml
 - **Database:** rusqlite (SQLite)
-- **Archives:** zip crate (ZIP only)
+- **Archives:** zip crate (Windows .zip), tar + flate2 (Linux .tar.gz)
 - **Images:** image crate (icon loading)
 - **File ops:** remove_dir_all crate (fast directory deletion)
 - **Browser:** open crate (open URLs in default browser)
-- **Windows APIs:** windows crate
+- **Windows APIs:** windows crate (single-instance, console, message box; cfg-gated)
 - **CLI:** clap (derive macros), rustyline (interactive shell)
 
 ## Build & Run
